@@ -1,0 +1,415 @@
+import QtQuick
+import QtQuick.Controls.Basic as Controls
+import QtQuick.Layouts
+
+// The file manager's window, laid out as the boards: toolbar, places, files, status line. The
+// rounded corners, border and shadow around it are the compositor's.
+Controls.ApplicationWindow {
+    id: window
+
+    required property string startPath
+    property alias folder: folderModel
+    property string viewMode: "grid"
+
+    readonly property bool inTrash: Places.inTrash(folderModel.path)
+    readonly property bool atTrash: Places.isTrash(folderModel.path) // its entries can be restored
+
+    function join(dir: string, name: string): string {
+        return (dir === "/" ? "" : dir) + "/" + name;
+    }
+
+    function nameOf(path: string): string {
+        return path.slice(path.lastIndexOf("/") + 1);
+    }
+
+    function setView(mode: string) {
+        viewMode = mode;
+        const row = folderModel.currentRow;
+        if (row >= 0)
+            Qt.callLater(() => files.view.positionViewAtIndex(row, ListView.Contain));
+    }
+
+    // double-click or Enter on a row: a folder opens here, a file in its app; on a row that's part
+    // of a bigger selection, the whole selection opens
+    function activate(row: int) {
+        const item = folderModel.get(row);
+        if (folderModel.selectedCount > 1 && folderModel.selectedPaths.indexOf(item.path) >= 0)
+            openSelection();
+        else if (item.isDir)
+            folderModel.go(item.path);
+        else
+            FileOps.open([item.path]);
+    }
+
+    function openSelection() {
+        const paths = folderModel.selectedPaths;
+        if (paths.length === 0)
+            return;
+        const items = paths.map(path => folderModel.get(folderModel.rowOf(path)));
+        const filesOnly = items.filter(item => !item.isDir).map(item => item.path);
+        if (filesOnly.length > 0)
+            FileOps.open(filesOnly);
+        else
+            folderModel.go(items[0].path);
+    }
+
+    function askTrash() {
+        const paths = folderModel.selectedPaths;
+        if (paths.length === 0)
+            return;
+        if (inTrash) {
+            askDelete(paths);
+            return;
+        }
+        const one = paths.length === 1;
+        confirm.ask({
+            title: one ? "Move “" + nameOf(paths[0]) + "” to trash?" : "Move " + paths.length + " items to trash?",
+            description: one ? "It stays in Trash until you empty it, so you can still restore it."
+                             : "They stay in Trash until you empty it, so you can still restore them.",
+            action: "Move to trash",
+            paths: paths,
+            run: () => FileOps.trash(paths)
+        });
+    }
+
+    function askDelete(paths) {
+        if (paths.length === 0)
+            return;
+        confirm.ask({
+            title: paths.length === 1 ? "Delete “" + nameOf(paths[0]) + "” forever?" : "Delete " + paths.length + " items forever?",
+            description: "This can't be undone.",
+            action: "Delete forever",
+            paths: paths,
+            safeDefault: true,
+            run: () => FileOps.deleteForever(paths)
+        });
+    }
+
+    function askEmptyTrash() {
+        confirm.ask({
+            title: "Empty the trash?",
+            description: "Everything in it is deleted for good. This can't be undone.",
+            action: "Empty trash",
+            safeDefault: true,
+            run: () => FileOps.emptyTrash()
+        });
+    }
+
+    function askRename() {
+        const paths = folderModel.selectedPaths;
+        if (paths.length !== 1 || inTrash)
+            return;
+        const path = paths[0];
+        const dir = folderModel.path;
+        names.ask({
+            title: "Rename “" + nameOf(path) + "”",
+            action: "Rename",
+            icon: Icons.pencil,
+            dir: dir,
+            except: path,
+            text: nameOf(path),
+            run: name => {
+                const problem = FileOps.rename(path, name);
+                if (problem === "")
+                    folderModel.selectPaths([join(dir, name)]);
+                return problem;
+            }
+        });
+    }
+
+    function askNewFolder() {
+        if (inTrash)
+            return;
+        const dir = folderModel.path;
+        names.ask({
+            title: "New folder",
+            action: "Create",
+            icon: Icons.folderPlus,
+            dir: dir,
+            text: "New folder",
+            run: name => {
+                const problem = FileOps.makeFolder(dir, name);
+                if (problem === "")
+                    folderModel.selectPaths([join(dir, name)]);
+                return problem;
+            }
+        });
+    }
+
+    function copySelection() {
+        FileOps.copy(folderModel.selectedPaths);
+    }
+
+    // not in the trash: what's there goes back with Restore
+    function cutSelection() {
+        if (!inTrash)
+            FileOps.cut(folderModel.selectedPaths);
+    }
+
+    function pasteHere() {
+        FileOps.paste(folderModel.path);
+    }
+
+    function showProperties() {
+        const paths = folderModel.selectedPaths;
+        if (paths.length === 1)
+            properties.show(paths[0]);
+    }
+
+    function itemEntries() {
+        const paths = folderModel.selectedPaths;
+        // one item has properties to show
+        const info = paths.length === 1 ? [{ text: "Properties", icon: Icons.info, run: showProperties }] : [];
+        const copyPath = { text: "Copy path", icon: Icons.link, run: () => FileOps.copyPaths(paths) };
+        const remove = { text: "Delete forever", icon: Icons.trash2, danger: true, run: () => askDelete(paths) };
+        if (atTrash)
+            return [{ text: "Restore", icon: Icons.restore, run: () => FileOps.restore(paths) }, copyPath, ...info, { separator: true }, remove];
+        if (inTrash)
+            return [{ text: "Open", icon: Icons.file, run: openSelection }, copyPath, ...info, { separator: true }, remove];
+        const entries = [{ text: "Open", icon: Icons.file, run: openSelection }];
+        if (paths.length === 1)
+            entries.push({ text: "Rename", icon: Icons.pencil, run: askRename });
+        entries.push({ text: "Cut", icon: Icons.scissors, run: () => FileOps.cut(paths) },
+                     { text: "Copy", icon: Icons.copy, run: () => FileOps.copy(paths) },
+                     copyPath,
+                     { text: "Compress", icon: Icons.archive, run: () => FileOps.compress(paths, folderModel.path) },
+                     ...info,
+                     { separator: true },
+                     { text: "Move to trash", icon: Icons.trash2, danger: true, run: askTrash });
+        return entries;
+    }
+
+    function backgroundEntries() {
+        const hidden = { text: "Show hidden files", icon: Icons.eye, checked: folderModel.showHidden,
+                         run: () => folderModel.showHidden = !folderModel.showHidden };
+        if (atTrash)
+            return [hidden, { separator: true }, { text: "Empty trash", icon: Icons.trash2, danger: true, run: askEmptyTrash }];
+        if (inTrash)
+            return [hidden];
+        const entries = [{ text: "New folder", icon: Icons.folderPlus, run: askNewFolder }];
+        if (FileOps.canPaste)
+            entries.push({ text: "Paste", icon: Icons.clipboard, run: pasteHere });
+        entries.push(hidden);
+        return entries;
+    }
+
+    // window coordinates
+    function openMenuAt(x: real, y: real) {
+        menu.entries = folderModel.selectedCount > 0 ? itemEntries() : backgroundEntries();
+        menu.openAt(x, y);
+    }
+
+    function openSortMenu(chipTopLeft: point) {
+        const keys = [["Name", FolderModel.ByName], ["Date modified", FolderModel.ByModified],
+                      ["Size", FolderModel.BySize], ["Type", FolderModel.ByType]];
+        menu.entries = keys.map(([text, key]) => ({
+            text: text,
+            icon: [],
+            checked: folderModel.sortKey === key,
+            run: () => folderModel.sortKey = key
+        }));
+        const at = status.mapToItem(null, chipTopLeft);
+        menu.openAt(at.x, at.y - menu.implicitHeight - 8);
+    }
+
+    // the boards' 960 x 516 window, a little taller so Devices fits without scrolling
+    width: 960
+    height: 600
+    minimumWidth: 640
+    minimumHeight: 400
+    visible: true
+    title: "Files"
+    color: Theme.bgAlt
+
+    Component.onCompleted: folderModel.go(startPath)
+
+    FolderModel {
+        id: folderModel
+        onFailed: message => status.flash(message)
+    }
+
+    Connections {
+        target: FileOps
+
+        function onFailed(message) {
+            status.flash(message);
+        }
+
+        function onNotice(message) {
+            status.note(message);
+        }
+
+        // what was pasted, compressed or brought back by undo
+        function onFinished(job, paths) {
+            if (paths.length > 0)
+                folderModel.selectPaths(paths);
+        }
+    }
+
+    Connections {
+        target: Places
+
+        function onFailed(message) {
+            status.flash(message);
+        }
+    }
+
+    // the mouse's back and forward buttons, under everything else
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.BackButton | Qt.ForwardButton
+        onPressed: event => event.button === Qt.BackButton ? folderModel.back() : folderModel.forward()
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 76
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            spacing: 10
+
+            IconButton {
+                icon: Icons.back
+                label: "Back"
+                enabled: folderModel.canGoBack
+                onClicked: folderModel.back()
+            }
+
+            IconButton {
+                icon: Icons.forward
+                label: "Forward"
+                enabled: folderModel.canGoForward
+                onClicked: folderModel.forward()
+            }
+
+            IconButton {
+                icon: Icons.up
+                label: "Up one folder"
+                enabled: folderModel.canGoUp
+                onClicked: folderModel.up()
+            }
+
+            PathBar {
+                id: pathBar
+                Layout.fillWidth: true
+                folder: folderModel
+                onDone: files.forceActiveFocus()
+            }
+
+            SearchField {
+                id: search
+                Layout.preferredWidth: 200
+                folder: folderModel
+                onDone: {
+                    files.forceActiveFocus();
+                    if (folderModel.count > 0 && folderModel.selectedCount === 0)
+                        folderModel.select(0, FolderModel.Replace);
+                }
+            }
+
+            Row {
+                spacing: 4
+
+                IconButton {
+                    icon: Icons.grid
+                    label: "Grid view"
+                    active: window.viewMode === "grid"
+                    restColor: Theme.subtext
+                    onClicked: window.setView("grid")
+                }
+
+                IconButton {
+                    icon: Icons.list
+                    label: "List view"
+                    active: window.viewMode === "list"
+                    restColor: Theme.subtext
+                    onClicked: window.setView("list")
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
+
+            Sidebar {
+                Layout.preferredWidth: 208
+                Layout.fillHeight: true
+                folder: folderModel
+            }
+
+            FileView {
+                id: files
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.leftMargin: 4
+                Layout.rightMargin: 20
+                folder: folderModel
+                mode: window.viewMode
+                focus: true
+                onActivated: row => window.activate(row)
+                onMenuRequested: (at, onItem) => {
+                    const scene = files.mapToItem(null, at);
+                    window.openMenuAt(scene.x, scene.y);
+                }
+                onTyped: text => search.append(text)
+            }
+        }
+
+        StatusBar {
+            id: status
+            Layout.fillWidth: true
+            folder: folderModel
+            onSortRequested: at => window.openSortMenu(at)
+        }
+    }
+
+    FileMenu {
+        id: menu
+        onAboutToHide: files.forceActiveFocus()
+    }
+
+    ConfirmDialog {
+        id: confirm
+        onAboutToHide: files.forceActiveFocus()
+    }
+
+    NameDialog {
+        id: names
+        onAboutToHide: files.forceActiveFocus()
+    }
+
+    PropertiesDialog {
+        id: properties
+        objectName: "properties"
+        onAboutToHide: files.forceActiveFocus()
+    }
+
+    Shortcut { sequences: [StandardKey.Find]; onActivated: search.focusField() }
+    Shortcut { sequence: "Ctrl+L"; onActivated: pathBar.edit() }
+    Shortcut { sequence: "Ctrl+H"; onActivated: folderModel.showHidden = !folderModel.showHidden }
+    Shortcut { sequence: "Ctrl+1"; onActivated: window.setView("grid") }
+    Shortcut { sequence: "Ctrl+2"; onActivated: window.setView("list") }
+    Shortcut { sequence: "Ctrl+Shift+N"; onActivated: window.askNewFolder() }
+    Shortcut { sequence: "F2"; onActivated: window.askRename() }
+    Shortcut { sequences: ["Alt+Return", "Alt+Enter"]; onActivated: window.showProperties() }
+    Shortcut { sequence: "Delete"; onActivated: window.askTrash() }
+    Shortcut { sequence: "Shift+Delete"; onActivated: window.askDelete(folderModel.selectedPaths) }
+    Shortcut { sequences: [StandardKey.SelectAll]; onActivated: folderModel.selectAll() }
+    // a text field with the focus keeps these keys for its own text
+    Shortcut { sequences: [StandardKey.Copy]; onActivated: window.copySelection() }
+    Shortcut { sequences: [StandardKey.Cut]; onActivated: window.cutSelection() }
+    Shortcut { sequences: [StandardKey.Paste]; onActivated: window.pasteHere() }
+    Shortcut { sequences: [StandardKey.Undo]; onActivated: FileOps.undo() }
+    Shortcut { sequence: "Alt+Left"; onActivated: folderModel.back() }
+    Shortcut { sequence: "Alt+Right"; onActivated: folderModel.forward() }
+    Shortcut { sequence: "Alt+Up"; onActivated: folderModel.up() }
+    Shortcut { sequence: "Alt+Home"; onActivated: folderModel.go(Places.home) }
+    Shortcut { sequences: ["F5", "Ctrl+R"]; onActivated: folderModel.reload() }
+    Shortcut { sequences: ["Ctrl+W", StandardKey.Quit]; onActivated: window.close() }
+}

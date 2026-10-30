@@ -1,0 +1,33 @@
+# Pistachio FM's desktop entry. `cmake --install build --prefix ~/.local` puts it in
+# ~/.local/share/applications (and the app in ~/.local/bin), where launchers find it.
+#
+# The installed copy runs the app by its full path (~/.local/bin/pistachio-fm): launchers start apps
+# with the session's PATH, which needn't hold ~/.local/bin (the Pistachio shell's doesn't).
+#
+# To try it before installing, copy it there and point Exec and TryExec at the build:
+#   Exec=/home/sx/Desktop/pistachio-fm/build/pistachio-fm %U
+#
+# To make it the app that opens folders (xdg-open, the shell's "Show in file manager"):
+#   xdg-mime default pistachio-fm.desktop inode/directory
+# and back to Nautilus:
+#   xdg-mime default org.gnome.Nautilus.desktop inode/directory
+
+[Desktop Entry]
+Type=Application
+Name=Pistachio FM
+GenericName=File Manager
+Comment=Browse your files in Pistachio Noir
+Keywords=folder;files;explorer;browser;manager;pistachio;
+# %U: xdg-open hands over folders (and files: their folder opens with them selected) as file:// URLs
+Exec=pistachio-fm %U
+# hides the entry while the app isn't there
+TryExec=pistachio-fm
+# Papirus has it, as do most icon themes
+Icon=system-file-manager
+Terminal=false
+StartupNotify=true
+Categories=System;FileTools;FileManager;Qt;
+# offered for folders under "Open with"; xdg-mime above makes it the default
+MimeType=inode/directory;
+# the Wayland app id (QGuiApplication::setDesktopFileName), for Hyprland window rules
+StartupWMClass=pistachio-fm
