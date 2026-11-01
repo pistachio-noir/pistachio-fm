@@ -1,3 +1,4 @@
+#include "Apps.h"
 #include "FileOps.h"
 #include "FolderModel.h"
 #include "Format.h"
@@ -9,6 +10,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QGuiApplication>
+#include <QLocale>
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QSignalSpy>
@@ -351,6 +353,27 @@ private slots:
         QCOMPARE(ops.displayPath(path + QStringLiteral("/Sub2")), QStringLiteral("~/names/Sub2"));
     }
 
+    void newFile()
+    {
+        const QString path = dir(QStringLiteral("new-files"));
+        FileOps ops;
+        QSignalSpy failed(&ops, &FileOps::failed);
+        QCOMPARE(ops.makeFile(path, QStringLiteral("notes.md")), QString());
+        QCOMPARE(QFileInfo(path + QStringLiteral("/notes.md")).size(), 0);
+        QCOMPARE(ops.makeFile(path, QStringLiteral("no extension")), QString());
+        QVERIFY(QFileInfo(path + QStringLiteral("/no extension")).isFile());
+        QVERIFY(ops.makeFile(path, QStringLiteral("notes.md")).contains(QStringLiteral("already here")));
+        QVERIFY(ops.makeFile(path, QStringLiteral("a/b.txt")).contains(QStringLiteral("“/”")));
+
+        // undo takes an empty one away; one written to meanwhile stays
+        ops.undo();
+        QVERIFY(!QFileInfo::exists(path + QStringLiteral("/no extension")));
+        write(path + QStringLiteral("/notes.md"), "# kept");
+        ops.undo();
+        QCOMPARE(contents(path + QStringLiteral("/notes.md")), "# kept");
+        QVERIFY(failed.last().at(0).toString().contains(QStringLiteral("stays")));
+    }
+
     void trashAndRestore()
     {
         const QString path = dir(QStringLiteral("trashing"));
@@ -405,10 +428,32 @@ private slots:
         const QString file = dir(QStringLiteral("to-empty")) + QStringLiteral("/gone.txt");
         touch(file);
         QVERIFY(ops.trash({ file }));
-        ops.emptyTrash();
+        ops.emptyTrash(Places::homeTrash() + QStringLiteral("/files"));
         QVERIFY(finished.wait(5000));
         QVERIFY(QDir(Places::homeTrash() + QStringLiteral("/files")).isEmpty());
         QVERIFY(QDir(Places::homeTrash() + QStringLiteral("/info")).isEmpty());
+
+        // a drive's trash empties itself, never the home one
+        const QString stick = dir(QStringLiteral("stick")) + QStringLiteral("/.Trash-1000");
+        QDir().mkpath(stick + QStringLiteral("/files"));
+        QDir().mkpath(stick + QStringLiteral("/info"));
+        touch(stick + QStringLiteral("/files/old.txt"));
+        touch(stick + QStringLiteral("/info/old.txt.trashinfo"));
+        const QString kept = dir(QStringLiteral("to-keep")) + QStringLiteral("/kept.txt");
+        touch(kept);
+        QVERIFY(ops.trash({ kept }));
+        ops.emptyTrash(stick + QStringLiteral("/files"));
+        QVERIFY(finished.wait(5000));
+        QVERIFY(QDir(stick + QStringLiteral("/files")).isEmpty());
+        QVERIFY(QDir(stick + QStringLiteral("/info")).isEmpty());
+        QVERIFY(QFile::exists(Places::homeTrash() + QStringLiteral("/files/kept.txt")));
+
+        // and a folder that isn't a trash is left alone
+        const QString plain = dir(QStringLiteral("not-a-trash"));
+        touch(plain + QStringLiteral("/stays.txt"));
+        ops.emptyTrash(plain);
+        QVERIFY(!finished.wait(300));
+        QVERIFY(QFile::exists(plain + QStringLiteral("/stays.txt")));
     }
 
     void compress()
@@ -769,6 +814,16 @@ private slots:
         QCOMPARE(ops.properties(path + QStringLiteral("/Folder/link")).value(QStringLiteral("link")).toString(),
                  path + QStringLiteral("/Folder/x"));
 
+        // a trashed item: where it was deleted from and when, not the trash's own folder
+        touch(path + QStringLiteral("/props-trashed.txt"));
+        QVERIFY(ops.trash({ path + QStringLiteral("/props-trashed.txt") }));
+        info = ops.properties(Places::homeTrash() + QStringLiteral("/files/props-trashed.txt"));
+        QCOMPARE(info.value(QStringLiteral("deletedFrom")).toString(), QStringLiteral("~/props"));
+        QVERIFY(info.value(QStringLiteral("location")).toString().isEmpty());
+        const QString today = QLocale(QLocale::English, QLocale::UnitedStates).toString(QDate::currentDate(), QStringLiteral("MMM d, yyyy"));
+        QVERIFY2(info.value(QStringLiteral("deleted")).toString().startsWith(today), qPrintable(info.value(QStringLiteral("deleted")).toString()));
+        QVERIFY(ops.properties(path + QStringLiteral("/a.txt")).value(QStringLiteral("deletedFrom")).toString().isEmpty());
+
         // a folder's size is counted in the background; links count as files, never followed
         info = ops.properties(path + QStringLiteral("/Folder"));
         QCOMPARE(info.value(QStringLiteral("type")).toString(), QStringLiteral("Folder"));
@@ -858,7 +913,7 @@ private slots:
             return list;
         };
         QTRY_COMPARE(unmounted(), (QStringList { QStringLiteral("Stick /dev/sdz1"), QStringLiteral("32 MB drive /dev/sdz2") }));
-        QCOMPARE(places.devices().last().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Trash"));
+        QCOMPARE(places.places().last().toMap().value(QStringLiteral("path")).toString(), places.trash()); // never pushed down
 
         places.mount(QStringLiteral("/dev/sdz1"));
         QVERIFY(failed.wait(5000));
@@ -869,10 +924,118 @@ private slots:
         qputenv("PATH", path);
     }
 
+    void appCommands_data()
+    {
+        QTest::addColumn<QString>("exec");
+        QTest::addColumn<QStringList>("command");
+        const QString file = QStringLiteral("/tmp/a b.txt");
+        QTest::newRow("a URL") << "cider %U" << QStringList { "cider", "file:///tmp/a%20b.txt" };
+        QTest::newRow("a path, quoted program") << "\"/opt/My App/run\" --open=%f"
+                                                << QStringList { "/opt/My App/run", "--open=" + file };
+        QTest::newRow("escapes in quotes") << "sh -c \"echo \\\"hi\\\"\" %F" << QStringList { "sh", "-c", "echo \"hi\"", file };
+        QTest::newRow("%% and dropped codes") << "app %i --pct=100%% %f %k" << QStringList { "app", "--pct=100%", file };
+        QTest::newRow("no file code: appended") << "btop" << QStringList { "btop", file };
+    }
+
+    void appCommands()
+    {
+        QFETCH(QString, exec);
+        QFETCH(QStringList, command);
+        QCOMPARE(Apps::command(exec, QStringLiteral("/tmp/a b.txt")), command);
+    }
+
+    void appsAndDefaults()
+    {
+        // stand-in apps in the temporary home's applications folder; real ones from /usr/share may be
+        // listed too, so only these are looked at
+        const QString apps = m_home + QStringLiteral("/.local/share/applications");
+        QDir().mkpath(apps);
+        const QString log = m_home + QStringLiteral("/launched.txt");
+        const QString script = m_home + QStringLiteral("/fake-app.sh");
+        write(script, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + log.toUtf8() + "'\n");
+        QVERIFY(QFile::setPermissions(script, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        const auto entry = [&](const char *id, const QByteArray &body) {
+            write(apps + u'/' + QLatin1String(id), "[Desktop Entry]\nType=Application\n" + body);
+        };
+        entry("aaa-notes.desktop", "Name=Aaa Notes\nExec=" + script.toUtf8() + " --edit %f\nMimeType=text/markdown;\n");
+        entry("zed-writer.desktop", "Name=Zed Writer\nExec=" + script.toUtf8() + " %U\nMimeType=text/markdown;text/plain;\n");
+        entry("plain-pad.desktop", "Name=Plain Pad\nExec=pad %f\nMimeType=text/plain;\n");
+        entry("gone.desktop", "Name=Gone\nExec=gone %f\nHidden=true\nMimeType=text/markdown;\n");
+        entry("helper.desktop", "Name=Helper\nExec=helper %f\nNoDisplay=true\n");
+        entry("term-app.desktop", "Name=Term App\nExec=tool %f\nTerminal=true\nMimeType=text/x-pfm-none;\n");
+
+        // the user's own mimeapps.list: everything in it but the one line must survive
+        const QString config = qEnvironmentVariable("XDG_CONFIG_HOME") + QStringLiteral("/mimeapps.list");
+        QDir().mkpath(QFileInfo(config).path());
+        const QByteArray before = "# mine\n[Added Associations]\ntext/markdown=aaa-notes.desktop;\n\n"
+                                  "[Default Applications]\nimage/png=org.gnome.Loupe.desktop\n\n[Other]\nkeep=me\n";
+        write(config, before);
+
+        const QString file = dir(QStringLiteral("apps")) + QStringLiteral("/read me.md");
+        write(file, "# hi\n");
+        Apps finder;
+        const auto ids = [&] {
+            QStringList list;
+            for (const QVariant &app : finder.forFile(file).value(QStringLiteral("apps")).toList())
+                list.append(app.toMap().value(QStringLiteral("id")).toString());
+            return list;
+        };
+        // no default yet but the added association: that one first; then the type's own apps, then text/plain's
+        QStringList found = ids();
+        QCOMPARE(found.value(0), QStringLiteral("aaa-notes.desktop"));
+        QVERIFY(found.contains(QStringLiteral("zed-writer.desktop")));
+        QVERIFY(found.indexOf(QStringLiteral("zed-writer.desktop")) < found.indexOf(QStringLiteral("plain-pad.desktop")));
+        QVERIFY(!found.contains(QStringLiteral("gone.desktop")));
+        QCOMPARE(finder.forFile(file).value(QStringLiteral("mime")).toString(), QStringLiteral("text/markdown"));
+        QVERIFY(!finder.forFile(file).value(QStringLiteral("type")).toString().isEmpty());
+        QCOMPARE(finder.defaultName(file), QStringLiteral("Aaa Notes"));
+        bool helperListed = false;
+        for (const QVariant &app : finder.all())
+            helperListed |= app.toMap().value(QStringLiteral("id")) == QLatin1String("helper.desktop");
+        QVERIFY(!helperListed); // NoDisplay
+
+        // opening once changes nothing; with remember, that type's line is added and nothing else moves
+        QVERIFY(finder.open(QStringLiteral("zed-writer.desktop"), file, false));
+        QTRY_COMPARE(contents(log), QUrl::fromLocalFile(file).toEncoded() + '\n');
+        QCOMPARE(contents(config), before);
+        QFile::remove(log);
+        QVERIFY(finder.open(QStringLiteral("aaa-notes.desktop"), file, false));
+        QTRY_COMPARE(contents(log), "--edit\n" + file.toUtf8() + '\n');
+        QVERIFY(finder.open(QStringLiteral("zed-writer.desktop"), file, true));
+        QCOMPARE(contents(config), QByteArray("# mine\n[Added Associations]\ntext/markdown=aaa-notes.desktop;\n\n"
+                                              "[Default Applications]\nimage/png=org.gnome.Loupe.desktop\n"
+                                              "text/markdown=zed-writer.desktop\n\n[Other]\nkeep=me\n"));
+        QCOMPARE(ids().value(0), QStringLiteral("zed-writer.desktop"));
+        QCOMPARE(finder.defaultName(file), QStringLiteral("Zed Writer"));
+        // and picked again, the same line changes
+        QVERIFY(finder.open(QStringLiteral("aaa-notes.desktop"), file, true));
+        QVERIFY(contents(config).contains("text/markdown=aaa-notes.desktop\n\n[Other]"));
+        QCOMPARE(contents(config).count("text/markdown="), 2); // the added association and the one default
+
+        // a double-click opens it with that default, straight away (no portal asking again)
+        QFile::remove(log);
+        finder.openFiles({ file });
+        QTRY_COMPARE(contents(log), "--edit\n" + file.toUtf8() + '\n');
+
+        // a terminal app runs in $TERMINAL
+        const QByteArray terminal = qgetenv("TERMINAL");
+        qputenv("TERMINAL", script.toLocal8Bit());
+        QFile::remove(log);
+        QVERIFY(finder.open(QStringLiteral("term-app.desktop"), file, false));
+        QTRY_COMPARE(contents(log), "-e\ntool\n" + file.toUtf8() + '\n');
+        qputenv("TERMINAL", terminal);
+
+        QSignalSpy failed(&finder, &Apps::failed);
+        QVERIFY(!finder.open(QStringLiteral("no-such.desktop"), file, true));
+        QCOMPARE(failed.size(), 1);
+    }
+
     void crumbsAndPlaces()
     {
         QDir().mkpath(m_home + QStringLiteral("/Documents"));
+        QDir().mkpath(m_home + QStringLiteral("/Desktop"));
         Places places;
+        QCOMPARE(places.places().value(1).toMap().value(QStringLiteral("path")).toString(), m_home + QStringLiteral("/Desktop")); // under Home
         const auto crumbNames = [&](const QString &path) {
             QStringList list;
             for (const QVariant &crumb : places.crumbs(path))

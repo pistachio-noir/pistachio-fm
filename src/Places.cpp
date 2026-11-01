@@ -77,6 +77,7 @@ Places::Places(QObject *parent)
         const char *name;
         const char *icon;
     } standard[] = {
+        { QStandardPaths::DesktopLocation, "Desktop", "monitor" },
         { QStandardPaths::DocumentsLocation, "Documents", "fileText" },
         { QStandardPaths::DownloadLocation, "Downloads", "download" },
         { QStandardPaths::PicturesLocation, "Pictures", "image" },
@@ -89,6 +90,8 @@ Places::Places(QObject *parent)
             m_places.append(entry(QLatin1String(place.name), path, QLatin1String(place.icon)));
     }
 
+    // last of the places, so drives plugged in never push it out of view
+    m_places.append(entry(QStringLiteral("Trash"), trash(), QStringLiteral("trash")));
     QDir().mkpath(trash()); // so the Trash place opens before anything was ever trashed
     connect(&m_lsblk, &QProcess::finished, this, [this] {
         m_unmounted = unmountedDrives(m_lsblk.readAllStandardOutput());
@@ -136,7 +139,6 @@ void Places::showDevices()
     QVariantList devices = { entry(QStringLiteral("System"), QStringLiteral("/"), QStringLiteral("drive")) };
     devices.append(volumes());
     devices.append(m_unmounted);
-    devices.append(entry(QStringLiteral("Trash"), trash(), QStringLiteral("trash")));
     if (devices != m_devices) {
         m_devices = devices;
         emit devicesChanged();

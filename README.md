@@ -34,16 +34,23 @@ The window's class (Wayland app id) is `pistachio-fm`.
 | Escape | clear the search, then the selection |
 | Ctrl+A | select all |
 | F2 | rename |
+| Open with… (right-click a file) | pick the app; "Always use for <type>" makes it the desktop's default for that type (in `~/.config/mimeapps.list`, which xdg-open and the shell follow). Properties shows what opens a file now, with Change |
 | Alt+Enter | properties: type, size (a folder's counted), location, created, modified, permissions |
 | Ctrl+Shift+N | new folder |
+| Ctrl+Alt+N | new file: empty, any name and extension ("New file.txt" to start; type over the name, edit the extension) |
 | Ctrl+C / Ctrl+X / Ctrl+V | copy / cut / paste files (shared with other apps: Nautilus, Dolphin, a terminal gets the paths) |
 | Drag and drop | onto a folder, a sidebar place or empty space, to and from other apps: a move on the same drive, a copy to another; hold Ctrl to copy, Shift to move. Onto Trash: move to trash |
-| Ctrl+Z | undo the latest paste or drop, rename, new folder, move to trash, restore or compress (up to 10) |
+| Ctrl+Z | undo the latest paste or drop, rename, new folder or file, move to trash, restore or compress (up to 10) |
 | Delete / Shift+Delete | move to trash / delete forever (both ask first) |
+| Trash | the last of the sidebar's Places; in it, right-click an item to Restore or Delete forever, and the status bar's Empty trash empties it (it asks first). Properties says where an item was deleted from, and when |
 | Ctrl+H | hidden files |
 | Ctrl+1 / Ctrl+2 | grid / list |
+| Ctrl+T / Ctrl+W | new tab (same folder) / close tab (the window with the last); middle-click a folder or "Open in new tab" opens it in one, middle-click a tab closes it |
+| Ctrl+Tab / Ctrl+Shift+Tab | next / previous tab (Ctrl+PageDown / PageUp too) |
+| F3 | split the tab in two panes side by side; again, back to one (keeping the pane you're in) |
 | F5, Ctrl+R | reload |
-| Ctrl+W, Ctrl+Q | close |
+| Ctrl+Q | close the window |
+| F1, ? (or the toolbar's keyboard button) | this list of keys, in the app |
 
 ## Code
 
@@ -52,6 +59,7 @@ The window's class (Wayland app id) is `pistachio-fm`.
     search filter, sort, back/forward history, the status line
   - `FileOps`: open, rename, new folder, trash/restore/delete (freedesktop.org trash), copy path, compress,
     the clipboard (copy, cut, paste), drops and undo
+  - `Apps`: installed apps (desktop entries), which open a file's type, the default for a type (`mimeapps.list`), starting one on a file
   - `Transfer`: the copying and moving behind paste, drop and undo, on a worker thread, with its progress line
   - `Places`: the sidebar's places and devices (removable drives that aren't mounted, from `lsblk`), mounting and
     unmounting them with udiskie, breadcrumbs

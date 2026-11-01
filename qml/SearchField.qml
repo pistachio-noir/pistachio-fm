@@ -25,6 +25,8 @@ Rectangle {
     radius: 22
     color: Theme.bg
 
+    onFolderChanged: field.text = folder.filter // another tab or pane: its own search
+
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.IBeamCursor

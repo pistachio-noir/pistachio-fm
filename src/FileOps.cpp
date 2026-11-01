@@ -5,7 +5,6 @@
 
 #include <QClipboard>
 #include <QCoreApplication>
-#include <QDesktopServices>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -62,27 +61,35 @@ QString infoFileOf(const QString &trashedPath)
     return parentOf(files) + QStringLiteral("/info/") + nameOf(trashedPath) + QStringLiteral(".trashinfo");
 }
 
-// where a trashed item came from, from its .trashinfo (relative paths are from the drive's top)
-QString originalPath(const QString &trashedPath)
+// a value from a trashed item's .trashinfo ("Path", "DeletionDate"), empty if it has none
+QByteArray trashInfo(const QString &trashedPath, const QByteArray &key)
 {
     QFile info(infoFileOf(trashedPath));
     if (!info.open(QIODevice::ReadOnly | QIODevice::Text))
         return {};
     while (!info.atEnd()) {
         const QByteArray line = info.readLine().trimmed();
-        if (!line.startsWith("Path="))
-            continue;
-        const QString path = QUrl::fromPercentEncoding(line.mid(5));
-        if (path.startsWith(u'/'))
-            return QDir::cleanPath(path);
-        // $topdir/.Trash-$uid or $topdir/.Trash/$uid
-        const QString trashDir = parentOf(parentOf(trashedPath));
-        QString top = parentOf(trashDir);
-        if (nameOf(top) == QLatin1String(".Trash"))
-            top = parentOf(top);
-        return QDir::cleanPath(top + u'/' + path);
+        if (line.startsWith(key + '='))
+            return line.mid(key.size() + 1);
     }
     return {};
+}
+
+// where a trashed item came from (relative paths are from the drive's top)
+QString originalPath(const QString &trashedPath)
+{
+    const QByteArray value = trashInfo(trashedPath, "Path");
+    if (value.isEmpty())
+        return {};
+    const QString path = QUrl::fromPercentEncoding(value);
+    if (path.startsWith(u'/'))
+        return QDir::cleanPath(path);
+    // $topdir/.Trash-$uid or $topdir/.Trash/$uid
+    const QString trashDir = parentOf(parentOf(trashedPath));
+    QString top = parentOf(trashDir);
+    if (nameOf(top) == QLatin1String(".Trash"))
+        top = parentOf(top);
+    return QDir::cleanPath(top + u'/' + path);
 }
 
 bool sameDrive(const QString &a, const QString &b)
@@ -115,14 +122,6 @@ FileOps::~FileOps()
 {
     *m_stop = true;
     m_transfers.waitForDone();
-}
-
-void FileOps::open(const QStringList &paths)
-{
-    for (const QString &path : paths) {
-        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
-            emit failed(QStringLiteral("Nothing here opens “%1”").arg(nameOf(path)));
-    }
 }
 
 QString FileOps::checkName(const QString &dir, const QString &name, const QString &except) const
@@ -163,6 +162,18 @@ QString FileOps::makeFolder(const QString &dir, const QString &name)
     if (!QDir(dir).mkdir(name))
         return QStringLiteral("Couldn't make a folder here (no permission?)");
     remember({ Step::MadeFolder, {}, { join(dir, name) } });
+    return {};
+}
+
+QString FileOps::makeFile(const QString &dir, const QString &name)
+{
+    const QString problem = checkName(dir, name);
+    if (!problem.isEmpty())
+        return problem;
+    QFile file(join(dir, name));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) // never over something made meanwhile
+        return QStringLiteral("Couldn't make a file here (no permission?)");
+    remember({ Step::MadeFile, {}, { file.fileName() } });
     return {};
 }
 
@@ -250,9 +261,11 @@ void FileOps::deleteForever(const QStringList &paths)
     });
 }
 
-void FileOps::emptyTrash()
+void FileOps::emptyTrash(const QString &files)
 {
-    const QString trash = Places::homeTrash();
+    if (!Places::isTrashFolder(files))
+        return; // never anything else, whatever the caller thought it was
+    const QString trash = parentOf(files);
     QStringList paths;
     for (const QString &folder : { QStringLiteral("/files"), QStringLiteral("/info") }) {
         const QDir dir(trash + folder);
@@ -422,6 +435,16 @@ void FileOps::undo()
         emit finished(QStringLiteral("undo"), {});
         break;
 
+    case Step::MadeFile: {
+        const QString path = step.made.first();
+        if (QFileInfo(path).size() > 0)
+            emit failed(QStringLiteral("“%1” has something in it now, so it stays").arg(nameOf(path)));
+        else if (!present(path) || QFile::remove(path))
+            emit notice(QStringLiteral("Undid new file"));
+        emit finished(QStringLiteral("undo"), {});
+        break;
+    }
+
     case Step::MadeFolder: {
         const QString path = step.made.first();
         if (present(path) && !QDir().rmdir(path))
@@ -501,12 +524,18 @@ QVariantMap FileOps::properties(const QString &path) const
         rwx += QLatin1String(permissions & read ? "r" : "-") + QLatin1String(permissions & write ? "w" : "-")
             + QLatin1String(permissions & exe ? "x" : "-");
     const QMimeType mime = QMimeDatabase().mimeTypeForFile(info);
+    // a trashed item: where it was and when it went, instead of the trash's own folder
+    const bool trashed = Places::isTrashFolder(parentOf(path));
+    const QString original = trashed ? originalPath(path) : QString();
     return {
         { QStringLiteral("name"), info.fileName() },
         { QStringLiteral("kind"), info.isDir() ? QStringLiteral("folder") : Format::kind(mime) },
         { QStringLiteral("type"), info.isDir() ? QStringLiteral("Folder") : mime.comment() },
         { QStringLiteral("size"), size },
-        { QStringLiteral("location"), displayPath(parentOf(path)) },
+        { QStringLiteral("location"), trashed ? QString() : displayPath(parentOf(path)) },
+        { QStringLiteral("deletedFrom"), original.isEmpty() ? QString() : displayPath(parentOf(original)) },
+        { QStringLiteral("deleted"), trashed ? when(QDateTime::fromString(QString::fromUtf8(trashInfo(path, "DeletionDate")), Qt::ISODate))
+                                             : QString() },
         { QStringLiteral("created"), when(info.birthTime()) },
         { QStringLiteral("modified"), when(info.lastModified()) },
         { QStringLiteral("permissions"), info.owner().isEmpty() ? rwx : rwx + QStringLiteral(" · ") + info.owner() },

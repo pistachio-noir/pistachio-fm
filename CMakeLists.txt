@@ -14,9 +14,9 @@ set(PFM_QML
     Main.qml Theme.qml Icons.qml Icon.qml Shadow.qml
     IconButton.qml PathBar.qml SearchField.qml
     Sidebar.qml PlaceButton.qml SectionLabel.qml
-    FileView.qml FileTile.qml FileRow.qml KindBadge.qml ThinScrollBar.qml
-    StatusBar.qml FileMenu.qml FolderDrop.qml MenuEntry.qml
-    ConfirmDialog.qml NameDialog.qml PropertiesDialog.qml DialogButton.qml
+    FileView.qml Pane.qml TabPage.qml TabBar.qml FileTile.qml FileRow.qml KindBadge.qml ThinScrollBar.qml
+    StatusBar.qml Chip.qml FileMenu.qml FolderDrop.qml MenuEntry.qml
+    ConfirmDialog.qml NameDialog.qml PropertiesDialog.qml OpenWithDialog.qml KeysDialog.qml DialogButton.qml
 )
 list(TRANSFORM PFM_QML PREPEND qml/ OUTPUT_VARIABLE PFM_QML_FILES)
 foreach(file IN LISTS PFM_QML)
@@ -34,6 +34,7 @@ qt_add_qml_module(pfm
         src/FileOps.h src/FileOps.cpp
         src/Places.h src/Places.cpp
         src/Transfer.h src/Transfer.cpp
+        src/Apps.h src/Apps.cpp
     QML_FILES ${PFM_QML_FILES}
 )
 target_include_directories(pfm PUBLIC src)
@@ -54,6 +55,8 @@ install(CODE [[
     file(WRITE "${pfm_entry_out}" "${entry}")
 ]])
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pistachio-fm.desktop DESTINATION share/applications)
+# the app icon, in hicolor: the shell only finds hicolor icons (suite gotcha G-19)
+install(FILES data/pistachio-fm.svg DESTINATION share/icons/hicolor/scalable/apps)
 
 # tests: the backend without a window, and the screenshot tool (pfm-shots OUTDIR)
 enable_testing()

@@ -45,19 +45,17 @@ public:
     QString progress() const { return m_progress; }
     bool canUndo() const { return !m_undo.isEmpty(); }
 
-    // in their apps, through xdg-open's choice for each type
-    Q_INVOKABLE void open(const QStringList &paths);
-
     // why `name` can't be used for a new entry in `dir` ("" if it can); `except` is the entry being renamed
     Q_INVOKABLE QString checkName(const QString &dir, const QString &name, const QString &except = {}) const;
     Q_INVOKABLE QString rename(const QString &path, const QString &name);
     Q_INVOKABLE QString makeFolder(const QString &dir, const QString &name);
+    Q_INVOKABLE QString makeFile(const QString &dir, const QString &name); // empty, any name or extension
 
     // the freedesktop.org trash: ~/.local/share/Trash, or the drive's own .Trash-UID
     Q_INVOKABLE bool trash(const QStringList &paths);
     Q_INVOKABLE bool restore(const QStringList &trashedPaths); // back where each was trashed from
     Q_INVOKABLE void deleteForever(const QStringList &paths);
-    Q_INVOKABLE void emptyTrash();
+    Q_INVOKABLE void emptyTrash(const QString &files); // that trash's files/ folder: the home one or a drive's
 
     Q_INVOKABLE void copy(const QStringList &paths);
     Q_INVOKABLE void cut(const QStringList &paths);
@@ -70,11 +68,12 @@ public:
     // a .zip of these, next to them in `dir`, through bsdtar (libarchive)
     Q_INVOKABLE void compress(const QStringList &paths, const QString &dir);
 
-    // takes back the latest paste, rename, new folder, move to trash, restore or compress
+    // takes back the latest paste, rename, new folder or file, move to trash, restore or compress
     Q_INVOKABLE void undo();
 
-    // what Properties shows, as text: { name, kind, type, size, location, created, modified, permissions,
-    // link, measure }; "" for what's unknown. A folder's size (measure: true) comes from measure().
+    // what Properties shows, as text: { name, kind, type, size, location, deletedFrom, deleted, created,
+    // modified, permissions, link, measure }; "" for what's unknown or doesn't apply (a trashed item has
+    // deletedFrom and deleted instead of a location). A folder's size (measure: true) comes from measure().
     Q_INVOKABLE QVariantMap properties(const QString &path) const;
     // adds up a folder's files in the background, for measured()
     Q_INVOKABLE void measure(const QString &path);
@@ -97,9 +96,9 @@ private:
     // what undo takes back
     struct Step
     {
-        enum Kind { Copied, Moved, Renamed, MadeFolder, Trashed, Restored, Compressed } kind;
+        enum Kind { Copied, Moved, Renamed, MadeFolder, MadeFile, Trashed, Restored, Compressed } kind;
         QList<std::pair<QString, QString>> moves; // Moved, Renamed, Trashed: (where it was, where it went)
-        QStringList made; // Copied, MadeFolder, Restored, Compressed: what to take away
+        QStringList made; // Copied, MadeFolder, MadeFile, Restored, Compressed: what to take away
     };
 
     void remember(const Step &step);

@@ -4,18 +4,25 @@ import QtQuick
 import QtQuick.Controls.Basic as Controls
 
 // One item's properties, on the alert card of the move-to-trash board: its kind's badge, name and type,
-// then size, location, dates, permissions. A folder's size is added up in the background and fills in.
+// then size, location (where a trashed item was deleted from, and when), dates, permissions. A folder's
+// size is added up in the background and fills in.
 Controls.Popup {
     id: root
 
     property string path
     property var info: ({})
     property string size
+    property string opensWith // a file's default app, "None"; "" for a folder
 
-    // label, value, and whether it's a path (mono); rows with nothing to say are left out
+    signal chooseApp(string path) // Change / Choose next to Opens with
+
+    // label, value, whether it's a path (mono), and a chip's label; rows with nothing to say are left out
     readonly property var rows: [
         ["Size", size, false],
         ["Location", info.location, true],
+        ["Deleted from", info.deletedFrom, true],
+        ["Deleted", info.deleted, false],
+        ["Opens with", opensWith, false, opensWith === "None" ? "Choose" : "Change"],
         ["Points to", info.link, true],
         ["Created", info.created, false],
         ["Modified", info.modified, false],
@@ -26,6 +33,7 @@ Controls.Popup {
         root.path = path;
         info = FileOps.properties(path);
         size = info.measure ? "Counting…" : info.size;
+        opensWith = info.kind === "folder" ? "" : Apps.defaultName(path) || "None";
         if (info.measure)
             FileOps.measure(path);
         open();
@@ -155,7 +163,8 @@ Controls.Popup {
                     }
 
                     Text {
-                        width: row.width - 92 - row.spacing
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: row.width - 92 - row.spacing - (rowChip.visible ? rowChip.width + row.spacing : 0)
                         text: row.modelData[1]
                         textFormat: Text.PlainText
                         wrapMode: Text.WrapAnywhere
@@ -164,6 +173,13 @@ Controls.Popup {
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                         font.features: { "tnum": 1 }
+                    }
+
+                    Chip {
+                        id: rowChip
+                        visible: !!row.modelData[3]
+                        text: row.modelData[3] ?? ""
+                        onClicked: root.chooseApp(root.path)
                     }
                 }
             }

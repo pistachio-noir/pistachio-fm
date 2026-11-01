@@ -15,6 +15,22 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   holding the folder most closely (the grid board shows Home lit while in Documents, the list board Documents).
   Copy, Cut and Paste are additions (owner's request, no board): Copy took the board's copy icon, so Copy path has
   Lucide's link; cut items fade to `Theme.cutOpacity`; a pasted name that's taken keeps both, as Restore does.
+  Desktop is the second place, under Home (owner's request, 31 Oct: they go there often; not on the boards).
+  Trash is the last of Places, not under Devices as on the boards, so drives plugged in never push it out of view;
+  in a trash, an Empty trash chip (terracotta) sits next to the sort chip; Properties of a trashed item shows
+  where it was deleted from and when (owner's choices, 31 Oct). Empty trash empties the trash folder you're in
+  (home or a drive's), never another.
+- Open with (owner's choices, 31 Oct; board `open-with.html`, drawn by Claude and approved): per file type (MIME),
+  desktop-wide in `~/.config/mimeapps.list` (only that type's line in [Default Applications] changes; written
+  whole with QSaveFile); the type's apps first, Show all for the rest; "Always use" starts on only when the type
+  has no default; Properties has Opens with + Change. FM starts apps itself from Exec= (terminal apps in
+  $TERMINAL or kitty, as the shell's launcher), not through gio.
+- Tabs and split view (owner's choices, 1 Nov; board `tabs-split.html`, drawn by Claude and approved): Dolphin's
+  model, each tab can split in two (F3); the tab row only from two tabs on; Ctrl+W closes the tab, the window with
+  the last; tabs aren't restored on start. Main's `folderModel` is the folder of the pane you're in (`Pane` in a
+  `TabPage`), so the toolbar, sidebar, menus, dialogs and status line work on it unchanged; the view mode is shared.
+- The keys card (toolbar's keyboard button, F1, ?; owner's request 1 Nov, no board) lists the keys from data in
+  `KeysDialog.qml`, chips as the shell launcher's cheat sheet: keep it in step with Main's Shortcuts and README.
 - Window corners, border and shadow are Hyprland's. Never edit the Hyprland config.
 
 ## Style rules (as the shell's)
@@ -49,8 +65,8 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   database before moving HOME, or everything renders in the fallback font.
 - The shell's launcher starts apps with the session's PATH, which lacks `~/.local/bin`, so `cmake --install` writes
   the app's full path into the installed desktop entry's Exec and TryExec (`data/pistachio-fm.desktop` keeps the
-  bare name). The shell finds only hicolor icons (no Qt platform theme), so `Icon=system-file-manager`, a Papirus
-  icon, shows as a placeholder there.
+  bare name). The shell finds only hicolor icons (no Qt platform theme), so the app's own icon
+  (`data/pistachio-fm.svg`, drawn like pistachio-notes') is installed to hicolor/scalable/apps.
 - Wayland tells only the focused window that the clipboard changed, so `FileOps::paste` reads it again first.
 - A Popup's `focus: true` focuses the popup, not its contentItem: Keys handlers on the content need `focus: true`
   there too (FileMenu's arrows and Enter did nothing until that).
@@ -61,5 +77,14 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
 - Drives: `Places` lists removable drives' unmounted partitions from `lsblk -J -l` on the 4 s poll, and mounts and
   unmounts through `udiskie-mount` / `udiskie-umount` (udisks asks polkit, whose agent is the shell's: no pkexec).
   `tst_backend` tests them with stand-in scripts first on PATH, never a real drive.
+- A popup opened from FileMenu loses the keyboard when the menu finishes closing (Qt hands the focus back to the
+  files then), so dialogs take it in `onOpened`. Without that, Enter in Open with opened the file in its old app.
+- moc gives up on a test file with raw string literals holding escaped quotes ("No relevant classes found", then
+  "undefined reference to vtable"); write those strings with ordinary escapes.
+- Offscreen Qt has no icon theme, so app icons only show on the real desktop (hicolor; Papirus isn't seen, no
+  platform theme); the card falls back to the app's first letter.
+- Don't open files with `QDesktopServices::openUrl`: Qt 6.12 sends it through the desktop portal (OpenURI), whose
+  GTK "Open With…" chooser keeps asking, with its own memory per app, whatever `mimeapps.list` says. FM starts
+  the default itself (`Apps::openFiles`, the same launcher as Open with).
 - `FolderModel` keys selection by path, so reloads keep it; small changes are applied as row inserts and removes
   (no reset), so the views keep their scroll position.

@@ -1,6 +1,6 @@
 // Runs the real app on a made-up home laid out like the design boards' Documents folder, takes the
 // boards' three pictures and a few more, and tries the mouse and keys on it: pfm-shots OUTDIR.
-// Writes grid.png, list-menu.png, trash.png, trash-place.png, rename.png, cut.png, paste-menu.png, drag.png and properties.png,
+// Writes grid.png, list-menu.png, trash.png, trash-place.png, rename.png, cut.png, paste-menu.png, drag.png, properties.png, open-with.png, new-file.png, tabs-split.png and keys.png,
 // and prints a PASS or
 // FAIL line per check (exit code 1 on a FAIL). Offscreen (QT_QPA_PLATFORM=offscreen) it doesn't
 // touch the desktop; there, an icon of a row cut by the list's edge may show past the edge, which
@@ -171,7 +171,7 @@ int main(int argc, char *argv[])
 
     // the boards' Documents (names, sizes and dates as drawn there)
     const QString docs = home + QStringLiteral("/Documents");
-    for (const char *place : { "Documents", "Downloads", "Pictures", "Music" })
+    for (const char *place : { "Desktop", "Documents", "Downloads", "Pictures", "Music" })
         QDir().mkpath(home + u'/' + QLatin1String(place));
     makeFolder(docs + QStringLiteral("/Projects"), 14);
     makeFolder(docs + QStringLiteral("/Notes"), 9);
@@ -186,6 +186,23 @@ int main(int argc, char *argv[])
     makeFile(docs + QStringLiteral("/mixtape.flac"), 34000000, october(19));
     makeFile(docs + QStringLiteral("/boards-export.zip"), 18000000, october(25));
     makeFile(docs + QStringLiteral("/receipt-oct.pdf"), 88000, october(12));
+
+    // a stand-in app for Markdown, so Open with never starts a real one: it notes the file it was given
+    const QString opened = home + QStringLiteral("/opened.txt");
+    const QString fakeApp = home + QStringLiteral("/fake-editor.sh");
+    {
+        QFile script(fakeApp);
+        if (!script.open(QIODevice::WriteOnly)
+            || script.write("#!/bin/sh\nprintf '%s' \"$1\" > '" + opened.toUtf8() + "'\n") < 0)
+            qFatal("can't write the stand-in app");
+        script.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        QDir().mkpath(home + QStringLiteral("/.local/share/applications"));
+        QFile entry(home + QStringLiteral("/.local/share/applications/pfm-fake.desktop"));
+        if (!entry.open(QIODevice::WriteOnly)
+            || entry.write("[Desktop Entry]\nType=Application\nName=Fake Editor\nExec=" + fakeApp.toUtf8()
+                           + " %f\nMimeType=text/markdown;\n") < 0)
+            qFatal("can't write the stand-in app's entry");
+    }
 
     QQmlApplicationEngine engine;
     engine.setInitialProperties({ { QStringLiteral("startPath"), docs } });
@@ -265,6 +282,18 @@ int main(int argc, char *argv[])
     }
     QMetaObject::invokeMethod(window, "setView", Q_ARG(QString, QStringLiteral("grid")));
     QTest::qWait(100);
+    auto *emptyChip = window->findChild<QQuickItem *>(QStringLiteral("emptyTrash"));
+    check(emptyChip && emptyChip->isVisible(), "in the Trash, the status bar offers Empty trash");
+    QObject *confirm = window->findChild<QObject *>(QStringLiteral("confirm"));
+    if (emptyChip && confirm) {
+        QTest::mouseClick(window, Qt::LeftButton, {},
+                          emptyChip->mapToScene(QPointF(emptyChip->width() / 2, emptyChip->height() / 2)).toPoint());
+        check(waitFor([&] { return confirm->property("opened").toBool(); }), "…which asks first");
+        QTest::keyClick(window, Qt::Key_Escape);
+        check(waitFor([&] { return !confirm->property("visible").toBool(); }) && folder->count() == 2,
+              "…and Cancel keeps everything");
+        QTest::qWait(300);
+    }
     QTest::mouseClick(window, Qt::RightButton, {}, firstTile);
     save(window, out + QStringLiteral("/trash-place.png"));
     QTest::mouseClick(window, Qt::LeftButton, {}, firstTile + QPoint(60, 8 + 22)); // the first entry
@@ -320,7 +349,7 @@ int main(int argc, char *argv[])
     waitFor([&] { return folder->path() == notes && !folder->loading(); });
     QTest::mouseClick(window, Qt::RightButton, {}, QPoint(600, 520));
     save(window, out + QStringLiteral("/paste-menu.png"));
-    for (const auto key : { Qt::Key_Down, Qt::Key_Down, Qt::Key_Return }) // New folder, Paste
+    for (const auto key : { Qt::Key_Down, Qt::Key_Down, Qt::Key_Down, Qt::Key_Return }) // New folder, New file, Paste
         QTest::keyClick(window, key);
     check(waitFor([&] { return QFile::exists(notes + QStringLiteral("/init.lua")); })
               && !QFile::exists(docs + QStringLiteral("/init.lua")),
@@ -384,6 +413,120 @@ int main(int argc, char *argv[])
     save(window, out + QStringLiteral("/properties.png"));
     QTest::keyClick(window, Qt::Key_Escape);
     check(properties && waitFor([&] { return !properties->property("visible").toBool(); }), "Escape closes them");
+
+    // 9. Open with, from todo.md's menu: the stand-in app picked, with Always use on
+    QTest::qWait(300);
+    QTest::mouseMove(window, QPoint(100, 560)); // off where the menu opens
+    folder->selectPaths({ docs + QStringLiteral("/todo.md") });
+    QMetaObject::invokeMethod(window, "openMenuAt", Q_ARG(double, 520), Q_ARG(double, 224));
+    QTest::qWait(250);
+    for (const auto key : { Qt::Key_Down, Qt::Key_Down, Qt::Key_Return }) // Open, Open with…
+        QTest::keyClick(window, key);
+    QObject *openWith = window->findChild<QObject *>(QStringLiteral("openWith"));
+    check(openWith && waitFor([&] { return openWith->property("opened").toBool(); }), "the menu's Open with… opens the card");
+    if (openWith) {
+        bool listed = false;
+        for (const QVariant &app : openWith->property("choices").toList())
+            listed |= app.toMap().value(QStringLiteral("id")) == QLatin1String("pfm-fake.desktop");
+        check(listed, "…listing the apps for Markdown");
+        openWith->setProperty("chosen", QStringLiteral("pfm-fake.desktop"));
+        openWith->setProperty("remember", true);
+        save(window, out + QStringLiteral("/open-with.png"));
+        QTest::keyClick(window, Qt::Key_Return);
+        check(waitFor([&] {
+                  QFile log(opened);
+                  return log.open(QIODevice::ReadOnly) && log.readAll() == (docs + QStringLiteral("/todo.md")).toUtf8();
+              }),
+              "Enter opens the file with the picked app");
+        QFile defaults(home + QStringLiteral("/.config/mimeapps.list"));
+        check(defaults.open(QIODevice::ReadOnly) && defaults.readAll().contains("text/markdown=pfm-fake.desktop"),
+              "…and Always use makes it the default for Markdown");
+        // from now on Enter on the file opens it with that app, nothing asked in between
+        QTest::qWait(300);
+        QFile::remove(opened);
+        QTest::keyClick(window, Qt::Key_Return);
+        check(waitFor([&] {
+                  QFile log(opened);
+                  return log.open(QIODevice::ReadOnly) && log.readAll() == (docs + QStringLiteral("/todo.md")).toUtf8();
+              }),
+              "Enter on the file then opens it with the default");
+        QTest::keyClick(window, Qt::Key_Return, Qt::AltModifier);
+        check(properties && waitFor([&] { return properties->property("opensWith").toString() == QLatin1String("Fake Editor"); }),
+              "Properties says what opens it now");
+        QTest::keyClick(window, Qt::Key_Escape);
+    }
+
+    // 10. New file, from the menu on empty space: the name typed over "New file", the extension changed
+    QTest::qWait(300);
+    folder->clearSelection();
+    QMetaObject::invokeMethod(window, "openMenuAt", Q_ARG(double, 520), Q_ARG(double, 224));
+    QTest::qWait(250);
+    for (const auto key : { Qt::Key_Down, Qt::Key_Down, Qt::Key_Return }) // New folder, New file
+        QTest::keyClick(window, key);
+    QTest::qWait(300);
+    for (const char key : { 'n', 'o', 't', 'e', 's' })
+        QTest::keyClick(window, key); // over the selected "New file"
+    QTest::keyClick(window, Qt::Key_End);
+    for (int i = 0; i < 3; ++i)
+        QTest::keyClick(window, Qt::Key_Backspace); // "txt"
+    for (const char key : { 'm', 'd' })
+        QTest::keyClick(window, key);
+    save(window, out + QStringLiteral("/new-file.png"));
+    QTest::keyClick(window, Qt::Key_Return);
+    check(waitFor([&] { return folder->selectedPaths() == QStringList { docs + QStringLiteral("/notes.md") }; })
+              && QFileInfo(docs + QStringLiteral("/notes.md")).size() == 0,
+          "New file makes an empty notes.md, selected");
+
+    // 11. Desktop, one of the places
+    QTest::qWait(300);
+    QTest::mouseClick(window, Qt::LeftButton, {}, placeAt(window, home + QStringLiteral("/Desktop")));
+    check(waitFor([&] { return folder->path() == home + QStringLiteral("/Desktop"); }), "Desktop is one of the places");
+    save(window, out + QStringLiteral("/desktop-place.png"));
+
+    // 12. tabs and split view, back in Documents: each tab and pane keeps its own folder
+    QTest::qWait(300);
+    folder->go(docs);
+    waitFor([&] { return folder->path() == docs && !folder->loading(); });
+    const auto current = [&] { return window->property("folder").value<QObject *>()->property("path").toString(); };
+    const auto page = [&] { return window->property("page").value<QObject *>(); };
+    const auto tabCount = [&] { return window->property("tabTitles").toList().size(); };
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    check(waitFor([&] { return tabCount() == 2 && current() == docs; }), "Ctrl+T opens a second tab on the same folder");
+    QMetaObject::invokeMethod(window->property("folder").value<QObject *>(), "go", Q_ARG(QString, notes));
+    waitFor([&] { return current() == notes; });
+    QTest::keyClick(window, Qt::Key_Tab, Qt::ControlModifier);
+    check(waitFor([&] { return current() == docs; }), "Ctrl+Tab goes back to the first, still in Documents");
+    QTest::keyClick(window, Qt::Key_Tab, Qt::ControlModifier);
+    check(waitFor([&] { return current() == notes; }), "…and the second is still in Notes");
+
+    QTest::keyClick(window, Qt::Key_F3);
+    check(waitFor([&] { return page()->property("split").toBool() && page()->property("currentPane").toInt() == 1 && current() == notes; }),
+          "F3 splits the tab, the new pane on the same folder");
+    QMetaObject::invokeMethod(window->property("folder").value<QObject *>(), "go", Q_ARG(QString, docs));
+    check(waitFor([&] { return page()->property("title").toString() == QStringLiteral("Notes · Documents"); }),
+          "each pane goes its own way, and the tab says both");
+    save(window, out + QStringLiteral("/tabs-split.png"));
+    QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(300, 210)); // a tile in the first pane
+    check(waitFor([&] { return page()->property("currentPane").toInt() == 0 && current() == notes; }),
+          "a click in the other pane makes it the one the toolbar follows");
+    QTest::keyClick(window, Qt::Key_F3);
+    check(waitFor([&] { return !page()->property("split").toBool() && current() == notes; }), "F3 again closes the split, keeping that pane");
+    QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+    check(waitFor([&] { return tabCount() == 1 && current() == docs; }), "Ctrl+W closes the tab; one left, the row goes");
+
+    QTest::qWait(300);
+    QTest::mouseClick(window, Qt::MiddleButton, {}, tile(1)); // Notes
+    check(waitFor([&] { return tabCount() == 2 && current() == notes; }), "middle-click on a folder opens it in a new tab");
+    QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+
+    // 13. the toolbar's keyboard button lists every key
+    QTest::qWait(300);
+    QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(960 - 20 - 22, 38)); // the toolbar's last button
+    QObject *keysCard = window->findChild<QObject *>(QStringLiteral("keys"));
+    check(keysCard && waitFor([&] { return keysCard->property("opened").toBool(); }), "the keyboard button lists the keys");
+    save(window, out + QStringLiteral("/keys.png"));
+    QTest::keyClick(window, Qt::Key_Escape);
+    check(keysCard && waitFor([&] { return !keysCard->property("visible").toBool(); }), "…and Escape closes it");
 
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");
     return failures ? 1 : 0;

@@ -2,8 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
-// Places (home and its standard folders) and, under a rule, devices (the system drive, mounted
-// drives, Trash). The place holding the current folder most closely is the active chip.
+// Places (home, its standard folders, Trash) and, under a rule, devices (the system drive and the
+// drives plugged in). The place holding the current folder most closely is the active chip.
 Flickable {
     id: root
 

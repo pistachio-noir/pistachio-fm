@@ -24,9 +24,14 @@ FocusScope {
     signal activated(int row) // open it: a folder to browse, a file in its app
     signal menuRequested(point at, bool onItem) // `at` in this item's coordinates
     signal typed(string text)
+    signal middleClicked(int row) // a folder: open it in a new tab
 
     function press(row: int, selected: bool, button: int, modifiers: int, at: point) {
         root.forceActiveFocus();
+        if (button === Qt.MiddleButton) {
+            root.middleClicked(row);
+            return;
+        }
         if (button === Qt.RightButton) {
             if (!selected)
                 folder.select(row, FolderModel.Replace);

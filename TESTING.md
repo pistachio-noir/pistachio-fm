@@ -43,8 +43,16 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 - [ ] Right-click a file, several files, empty space; near the window's edges the menu stays inside; arrows + Enter work in it
 - [ ] Properties (Alt+Enter, or the menu with one item selected): a file, a folder (its size fills in), a link (where it
   points), something in the trash; "Created" is left out where the drive doesn't record it
+- [ ] Open with… on a file: the type's apps with their icons, the default first and marked; Show all apps; a terminal
+  app (Neovim) opens in kitty; Enter / double-click open
+- [ ] A double-click on a .jpg opens it in Loupe straight away (no GTK "Open With…" chooser in between)
+- [ ] "Always use" on: the next double-click opens it with that app; `xdg-mime query default text/markdown` agrees and
+  the rest of `~/.config/mimeapps.list` is unchanged. Off: nothing changes
+- [ ] Properties: "Opens with" and Change (None and Choose for a type nothing opens)
 - [ ] Rename (F2): the extension isn't selected; a taken name says so; Enter and Escape
 - [ ] New folder (Ctrl+Shift+N, or right-click empty space)
+- [ ] New file (Ctrl+Alt+N, or right-click empty space): `notes.md`, `Makefile` (no extension), a taken name says so; Ctrl+Z
+  removes it only while it's empty
 - [ ] Ctrl+C, then Ctrl+V in another folder: the copies land selected; the same folder gives "name (2)"; a taken name keeps both
 - [ ] Ctrl+X fades the items; Ctrl+V in another folder moves them, and they stop being faded
 - [ ] Copy in Nautilus, paste here, and the other way round (cut too); Ctrl+V into a terminal gives the paths
@@ -63,7 +71,18 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 - [ ] Copy path, then paste it in a terminal (on Wayland the copy lives as long as the app does, unless a clipboard manager keeps it)
 - [ ] Compress one file, a folder, several files: the .zip appears, selected; a second time gives "… (2).zip"
 - [ ] Move to trash (Delete): the dialog lists the items; Enter confirms; they're in `~/.local/share/Trash/files`
-- [ ] In Trash: Restore (also when the original folder is gone: it comes back), Delete forever (Shift+Delete too), Empty trash (right-click empty space). Those two start on Cancel
+- [ ] Tabs: Ctrl+T, the + and "Open in new tab"/middle-click on a folder; the row shows only with two or more; click,
+  Ctrl+Tab and Ctrl+Shift+Tab switch, each keeps its folder, history and search; × , middle-click and Ctrl+W close
+  (the window with the last)
+- [ ] Split (F3): the new pane opens on the same folder; click a pane and the path bar, sidebar, status line and keys
+  follow it; drag and paste between the panes; F3 again keeps the pane you're in
+- [ ] The toolbar's keyboard button (and F1, ?) lists the keys; Escape, Close or a click outside closes it
+- [ ] Desktop is the second place (under Home) and opens ~/Desktop
+- [ ] Trash is the last of Places, in view even with a stick's partitions under Devices
+- [ ] In Trash: Restore (also when the original folder is gone: it comes back), Delete forever (Shift+Delete too), Empty trash
+  (the status bar chip, or right-click empty space; the chip hides when the trash is empty). Those two start on Cancel
+- [ ] Properties of something in the trash: "Deleted from" and "Deleted" instead of its location
+- [ ] A stick's own trash (Ctrl+H, then `.Trash-1000/files` on the stick): Empty trash empties that one, not the home trash
 - [ ] Trashing from a USB stick (it goes to the stick's own `.Trash-1000`)
 
 ## Fitting in with the shell (optional, reversible)
@@ -78,4 +97,4 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 
 A picture under the cursor while dragging (Hyprland shows only the cursor), dropping on breadcrumbs, scrolling or
 opening folders while dragging over them, thumbnails, search in subfolders, tabs, encrypted drives (udiskie would have to ask for the password), powering a stick off after unmounting, properties of several items at once or of the folder you're in, changing
-permissions, redo, a "Replace?" question when a pasted name is taken (both are kept), cancelling a paste, "Open with…".
+permissions, redo, a "Replace?" question when a pasted name is taken (both are kept), cancelling a paste,.

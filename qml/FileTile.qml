@@ -103,7 +103,7 @@ Rectangle {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         drag.target: root.dragData ? dragged : null
         onPressed: event => root.press(event.button, event.modifiers, Qt.point(event.x, event.y))
         onClicked: event => {

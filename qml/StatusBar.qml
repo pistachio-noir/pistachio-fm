@@ -1,6 +1,7 @@
 import QtQuick
 
-// The window's foot: item count, then the selection or the free space, and the sort chip. flash()
+// The window's foot: item count, then the selection or the free space, the sort chip, and in the
+// trash an Empty trash chip. flash()
 // puts a problem there in terracotta for a few seconds, note() a plain message ("Undid rename");
 // while a paste takes a while, its progress shows instead of the count.
 Item {
@@ -9,8 +10,10 @@ Item {
     required property FolderModel folder
     property string message
     property bool problem
+    property bool trash // a trash with something in it: offer to empty it
 
     signal sortRequested(point at) // `at` in this item's coordinates, the chip's top-left
+    signal emptyTrashRequested
 
     function flash(text: string) {
         problem = true;
@@ -35,7 +38,7 @@ Item {
     Text {
         x: 24
         anchors.verticalCenter: parent.verticalCenter
-        width: chip.x - 24 - 16
+        width: (root.trash ? emptyTrash.x : chip.x) - 24 - 16
         elide: Text.ElideRight
         text: root.message || FileOps.progress || root.folder.summary
         textFormat: Text.PlainText
@@ -52,39 +55,25 @@ Item {
         onTriggered: root.message = ""
     }
 
-    Rectangle {
+    Chip {
         id: chip
-
         anchors.right: parent.right
         anchors.rightMargin: 24
         anchors.verticalCenter: parent.verticalCenter
-        width: label.implicitWidth + 28
-        height: 32
-        radius: 16
-        color: chipMouse.containsMouse ? Theme.overlay2 : Theme.overlay
-        Accessible.role: Accessible.Button
-        Accessible.name: label.text
+        text: "Sorted by " + ["name", "date", "size", "type"][root.folder.sortKey]
+        onClicked: root.sortRequested(Qt.point(chip.x, chip.y))
+    }
 
-        Behavior on color {
-            ColorAnimation {
-                duration: Theme.hoverDuration
-                easing.type: Theme.easing
-            }
-        }
-
-        SectionLabel {
-            id: label
-            anchors.centerIn: parent
-            text: "Sorted by " + ["name", "date", "size", "type"][root.folder.sortKey]
-            color: chipMouse.containsMouse ? Theme.text : Theme.subtext
-        }
-
-        MouseArea {
-            id: chipMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.sortRequested(Qt.point(chip.x, chip.y))
-        }
+    // in a trash with something in it; terracotta, as every action that can't be undone
+    Chip {
+        id: emptyTrash
+        objectName: "emptyTrash"
+        visible: root.trash
+        anchors.right: chip.left
+        anchors.rightMargin: 8
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Empty trash"
+        textColor: Theme.terracotta
+        onClicked: root.emptyTrashRequested()
     }
 }

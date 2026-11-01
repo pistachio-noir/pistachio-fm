@@ -2,14 +2,29 @@ import QtQuick
 import QtQuick.Controls.Basic as Controls
 import QtQuick.Layouts
 
-// The file manager's window, laid out as the boards: toolbar, places, files, status line. The
-// rounded corners, border and shadow around it are the compositor's.
+// The file manager's window, laid out as the boards: toolbar, tabs (from two on), places, files, status
+// line. Each tab has one pane or two (split); everything here works on the pane you're in. The rounded
+// corners, border and shadow around it are the compositor's.
 Controls.ApplicationWindow {
     id: window
 
     required property string startPath
-    property alias folder: folderModel
     property string viewMode: "grid"
+    property int currentTab
+    readonly property TabPage page: pages.count > currentTab ? pages.itemAt(currentTab) as TabPage : null
+    readonly property Pane activePane: page ? page.activePane : null
+    // the pane you're in's folder (an empty one only until the first tab is up)
+    readonly property FolderModel folderModel: activePane ? activePane.folder : idle
+    readonly property FolderModel folder: folderModel // for pfm-shots
+    readonly property var tabTitles: {
+        const list = [];
+        for (let i = 0; i < pages.count; ++i) {
+            const tab = pages.itemAt(i) as TabPage;
+            if (tab)
+                list.push({ title: tab.title, split: tab.split });
+        }
+        return list;
+    }
 
     readonly property bool inTrash: Places.inTrash(folderModel.path)
     readonly property bool atTrash: Places.isTrash(folderModel.path) // its entries can be restored
@@ -25,8 +40,38 @@ Controls.ApplicationWindow {
     function setView(mode: string) {
         viewMode = mode;
         const row = folderModel.currentRow;
-        if (row >= 0)
-            Qt.callLater(() => files.view.positionViewAtIndex(row, ListView.Contain));
+        if (row >= 0 && activePane)
+            Qt.callLater(() => activePane.view.view.positionViewAtIndex(row, ListView.Contain));
+    }
+
+    function focusFiles() {
+        if (activePane)
+            activePane.view.forceActiveFocus();
+    }
+
+    function newTab(path: string) {
+        tabList.append({ start: path });
+        currentTab = tabList.count - 1;
+        Qt.callLater(focusFiles);
+    }
+
+    // the window goes with the last tab
+    function closeTab(index: int) {
+        if (tabList.count <= 1) {
+            close();
+            return;
+        }
+        tabList.remove(index);
+        if (currentTab > index || currentTab === tabList.count)
+            currentTab -= 1;
+        Qt.callLater(focusFiles);
+    }
+
+    function nextTab(by: int) {
+        if (tabList.count > 1) {
+            currentTab = (currentTab + by + tabList.count) % tabList.count;
+            Qt.callLater(focusFiles);
+        }
     }
 
     // double-click or Enter on a row: a folder opens here, a file in its app; on a row that's part
@@ -38,7 +83,7 @@ Controls.ApplicationWindow {
         else if (item.isDir)
             folderModel.go(item.path);
         else
-            FileOps.open([item.path]);
+            Apps.openFiles([item.path]);
     }
 
     function openSelection() {
@@ -48,7 +93,7 @@ Controls.ApplicationWindow {
         const items = paths.map(path => folderModel.get(folderModel.rowOf(path)));
         const filesOnly = items.filter(item => !item.isDir).map(item => item.path);
         if (filesOnly.length > 0)
-            FileOps.open(filesOnly);
+            Apps.openFiles(filesOnly);
         else
             folderModel.go(items[0].path);
     }
@@ -85,13 +130,15 @@ Controls.ApplicationWindow {
         });
     }
 
+    // the trash this is: the home one, or a drive's
     function askEmptyTrash() {
+        const files = folderModel.path;
         confirm.ask({
             title: "Empty the trash?",
             description: "Everything in it is deleted for good. This can't be undone.",
             action: "Empty trash",
             safeDefault: true,
-            run: () => FileOps.emptyTrash()
+            run: () => FileOps.emptyTrash(files)
         });
     }
 
@@ -156,6 +203,26 @@ Controls.ApplicationWindow {
             properties.show(paths[0]);
     }
 
+    // an empty file of any name; the name before the extension is selected, so typing keeps ".txt"
+    function askNewFile() {
+        if (inTrash)
+            return;
+        const dir = folderModel.path;
+        names.ask({
+            title: "New file",
+            action: "Create",
+            icon: Icons.filePlus,
+            dir: dir,
+            text: "New file.txt",
+            run: name => {
+                const problem = FileOps.makeFile(dir, name);
+                if (problem === "")
+                    folderModel.selectPaths([join(dir, name)]);
+                return problem;
+            }
+        });
+    }
+
     function itemEntries() {
         const paths = folderModel.selectedPaths;
         // one item has properties to show
@@ -167,6 +234,10 @@ Controls.ApplicationWindow {
         if (inTrash)
             return [{ text: "Open", icon: Icons.file, run: openSelection }, copyPath, ...info, { separator: true }, remove];
         const entries = [{ text: "Open", icon: Icons.file, run: openSelection }];
+        if (paths.length === 1 && folderModel.get(folderModel.rowOf(paths[0])).isDir)
+            entries.push({ text: "Open in new tab", icon: Icons.plus, run: () => newTab(paths[0]) });
+        if (paths.length === 1 && !folderModel.get(folderModel.rowOf(paths[0])).isDir)
+            entries.push({ text: "Open with…", icon: Icons.externalLink, run: () => openWith.show(paths[0]) });
         if (paths.length === 1)
             entries.push({ text: "Rename", icon: Icons.pencil, run: askRename });
         entries.push({ text: "Cut", icon: Icons.scissors, run: () => FileOps.cut(paths) },
@@ -186,7 +257,8 @@ Controls.ApplicationWindow {
             return [hidden, { separator: true }, { text: "Empty trash", icon: Icons.trash2, danger: true, run: askEmptyTrash }];
         if (inTrash)
             return [hidden];
-        const entries = [{ text: "New folder", icon: Icons.folderPlus, run: askNewFolder }];
+        const entries = [{ text: "New folder", icon: Icons.folderPlus, run: askNewFolder },
+                         { text: "New file", icon: Icons.filePlus, run: askNewFile }];
         if (FileOps.canPaste)
             entries.push({ text: "Paste", icon: Icons.clipboard, run: pasteHere });
         entries.push(hidden);
@@ -221,11 +293,10 @@ Controls.ApplicationWindow {
     title: "Files"
     color: Theme.bgAlt
 
-    Component.onCompleted: folderModel.go(startPath)
+    Component.onCompleted: tabList.append({ start: startPath })
 
     FolderModel {
-        id: folderModel
-        onFailed: message => status.flash(message)
+        id: idle
     }
 
     Connections {
@@ -248,6 +319,14 @@ Controls.ApplicationWindow {
 
     Connections {
         target: Places
+
+        function onFailed(message) {
+            status.flash(message);
+        }
+    }
+
+    Connections {
+        target: Apps
 
         function onFailed(message) {
             status.flash(message);
@@ -297,7 +376,7 @@ Controls.ApplicationWindow {
                 id: pathBar
                 Layout.fillWidth: true
                 folder: folderModel
-                onDone: files.forceActiveFocus()
+                onDone: window.focusFiles()
             }
 
             SearchField {
@@ -305,7 +384,7 @@ Controls.ApplicationWindow {
                 Layout.preferredWidth: 200
                 folder: folderModel
                 onDone: {
-                    files.forceActiveFocus();
+                    window.focusFiles();
                     if (folderModel.count > 0 && folderModel.selectedCount === 0)
                         folderModel.select(0, FolderModel.Replace);
                 }
@@ -329,7 +408,27 @@ Controls.ApplicationWindow {
                     restColor: Theme.subtext
                     onClicked: window.setView("list")
                 }
+
+                IconButton {
+                    icon: Icons.keyboard
+                    label: "Keyboard shortcuts"
+                    restColor: Theme.subtext
+                    onClicked: keys.open()
+                }
             }
+        }
+
+        TabBar {
+            Layout.fillWidth: true
+            visible: tabList.count > 1
+            tabs: window.tabTitles
+            current: window.currentTab
+            onPicked: index => {
+                window.currentTab = index;
+                window.focusFiles();
+            }
+            onClosed: index => window.closeTab(index)
+            onAdded: window.newTab(window.folderModel.path)
         }
 
         RowLayout {
@@ -343,21 +442,30 @@ Controls.ApplicationWindow {
                 folder: folderModel
             }
 
-            FileView {
-                id: files
+            StackLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: 4
                 Layout.rightMargin: 20
-                folder: folderModel
-                mode: window.viewMode
-                focus: true
-                onActivated: row => window.activate(row)
-                onMenuRequested: (at, onItem) => {
-                    const scene = files.mapToItem(null, at);
-                    window.openMenuAt(scene.x, scene.y);
+                currentIndex: window.currentTab
+
+                Repeater {
+                    id: pages
+
+                    model: ListModel {
+                        id: tabList
+                    }
+
+                    delegate: TabPage {
+                        mode: window.viewMode
+                        focus: true
+                        onActivated: row => window.activate(row)
+                        onMenuRequested: at => window.openMenuAt(at.x, at.y)
+                        onTyped: text => search.append(text)
+                        onOpenInTab: path => window.newTab(path)
+                        onFailed: message => status.flash(message)
+                    }
                 }
-                onTyped: text => search.append(text)
             }
         }
 
@@ -365,29 +473,48 @@ Controls.ApplicationWindow {
             id: status
             Layout.fillWidth: true
             folder: folderModel
+            trash: window.atTrash && folderModel.totalCount > 0
             onSortRequested: at => window.openSortMenu(at)
+            onEmptyTrashRequested: window.askEmptyTrash()
         }
     }
 
     FileMenu {
         id: menu
-        onAboutToHide: files.forceActiveFocus()
+        onAboutToHide: window.focusFiles()
     }
 
     ConfirmDialog {
         id: confirm
-        onAboutToHide: files.forceActiveFocus()
+        objectName: "confirm"
+        onAboutToHide: window.focusFiles()
     }
 
     NameDialog {
         id: names
-        onAboutToHide: files.forceActiveFocus()
+        onAboutToHide: window.focusFiles()
     }
 
     PropertiesDialog {
         id: properties
         objectName: "properties"
-        onAboutToHide: files.forceActiveFocus()
+        onAboutToHide: window.focusFiles()
+        onChooseApp: path => {
+            close();
+            openWith.show(path);
+        }
+    }
+
+    KeysDialog {
+        id: keys
+        objectName: "keys"
+        onAboutToHide: window.focusFiles()
+    }
+
+    OpenWithDialog {
+        id: openWith
+        objectName: "openWith"
+        onAboutToHide: window.focusFiles()
     }
 
     Shortcut { sequences: [StandardKey.Find]; onActivated: search.focusField() }
@@ -396,6 +523,7 @@ Controls.ApplicationWindow {
     Shortcut { sequence: "Ctrl+1"; onActivated: window.setView("grid") }
     Shortcut { sequence: "Ctrl+2"; onActivated: window.setView("list") }
     Shortcut { sequence: "Ctrl+Shift+N"; onActivated: window.askNewFolder() }
+    Shortcut { sequence: "Ctrl+Alt+N"; onActivated: window.askNewFile() }
     Shortcut { sequence: "F2"; onActivated: window.askRename() }
     Shortcut { sequences: ["Alt+Return", "Alt+Enter"]; onActivated: window.showProperties() }
     Shortcut { sequence: "Delete"; onActivated: window.askTrash() }
@@ -411,5 +539,11 @@ Controls.ApplicationWindow {
     Shortcut { sequence: "Alt+Up"; onActivated: folderModel.up() }
     Shortcut { sequence: "Alt+Home"; onActivated: folderModel.go(Places.home) }
     Shortcut { sequences: ["F5", "Ctrl+R"]; onActivated: folderModel.reload() }
-    Shortcut { sequences: ["Ctrl+W", StandardKey.Quit]; onActivated: window.close() }
+    Shortcut { sequence: "Ctrl+T"; onActivated: window.newTab(window.folderModel.path) }
+    Shortcut { sequence: "Ctrl+W"; onActivated: window.closeTab(window.currentTab) }
+    Shortcut { sequences: ["Ctrl+Tab", "Ctrl+PgDown"]; onActivated: window.nextTab(1) }
+    Shortcut { sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab", "Ctrl+Shift+Backtab", "Ctrl+PgUp"]; onActivated: window.nextTab(-1) }
+    Shortcut { sequence: "F3"; onActivated: if (window.page) window.page.toggleSplit() }
+    Shortcut { sequences: [StandardKey.Quit]; onActivated: window.close() }
+    Shortcut { sequences: ["F1", "?"]; onActivated: keys.open() }
 }

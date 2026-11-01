@@ -22,8 +22,8 @@ Keywords=folder;files;explorer;browser;manager;pistachio;
 Exec=pistachio-fm %U
 # hides the entry while the app isn't there
 TryExec=pistachio-fm
-# Papirus has it, as do most icon themes
-Icon=system-file-manager
+# installed to hicolor/scalable/apps (the shell only finds hicolor icons, suite gotcha G-19)
+Icon=pistachio-fm
 Terminal=false
 StartupNotify=true
 Categories=System;FileTools;FileManager;Qt;
