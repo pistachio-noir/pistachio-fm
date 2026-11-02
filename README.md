@@ -48,6 +48,7 @@ The window's class (Wayland app id) is `pistachio-fm`.
 | Ctrl+T / Ctrl+W | new tab (same folder) / close tab (the window with the last); middle-click a folder or "Open in new tab" opens it in one, middle-click a tab closes it |
 | Ctrl+Tab / Ctrl+Shift+Tab | next / previous tab (Ctrl+PageDown / PageUp too) |
 | F3 | split the tab in two panes side by side; again, back to one (keeping the pane you're in) |
+| (mouse) | right-click a tab: Split view (Close split) or Close tab; drag a tab onto the left or right of the files to put its folder in that pane beside the tab on show, and the tab goes |
 | F5, Ctrl+R | reload |
 | Ctrl+Q | close the window |
 | F1, ? (or the toolbar's keyboard button) | this list of keys, in the app |

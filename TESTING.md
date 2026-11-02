@@ -76,6 +76,9 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
   (the window with the last)
 - [ ] Split (F3): the new pane opens on the same folder; click a pane and the path bar, sidebar, status line and keys
   follow it; drag and paste between the panes; F3 again keeps the pane you're in
+- [ ] Right-click a tab: Split view / Close split (it goes to that tab) and Close tab. Drag a tab onto the left or right
+  third of the files: the tab's chip follows the pointer, that side lights, and on letting go its folder is the pane there (the tab on show splits) and
+  the tab goes; dragged onto the middle, or the tab on show dragged, nothing happens
 - [ ] The toolbar's keyboard button (and F1, ?) lists the keys; Escape, Close or a click outside closes it
 - [ ] Desktop is the second place (under Home) and opens ~/Desktop
 - [ ] Trash is the last of Places, in view even with a stick's partitions under Devices
@@ -96,5 +99,5 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 ## Not built yet
 
 A picture under the cursor while dragging (Hyprland shows only the cursor), dropping on breadcrumbs, scrolling or
-opening folders while dragging over them, thumbnails, search in subfolders, tabs, encrypted drives (udiskie would have to ask for the password), powering a stick off after unmounting, properties of several items at once or of the folder you're in, changing
+opening folders while dragging over them, thumbnails, search in subfolders, reordering tabs or pulling one out into a window of its own, encrypted drives (udiskie would have to ask for the password), powering a stick off after unmounting, properties of several items at once or of the folder you're in, changing
 permissions, redo, a "Replace?" question when a pasted name is taken (both are kept), cancelling a paste,.

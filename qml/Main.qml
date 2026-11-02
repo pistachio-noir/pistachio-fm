@@ -11,6 +11,9 @@ Controls.ApplicationWindow {
     required property string startPath
     property string viewMode: "grid"
     property int currentTab
+    property string dropSide // a tab being dragged over a side of the files
+    property int draggedTab: -1
+    property point dragAt // window coordinates
     readonly property TabPage page: pages.count > currentTab ? pages.itemAt(currentTab) as TabPage : null
     readonly property Pane activePane: page ? page.activePane : null
     // the pane you're in's folder (an empty one only until the first tab is up)
@@ -65,6 +68,38 @@ Controls.ApplicationWindow {
         if (currentTab > index || currentTab === tabList.count)
             currentTab -= 1;
         Qt.callLater(focusFiles);
+    }
+
+    // where a tab dragged to `at` (window coordinates) would land: the outer thirds of the files, never
+    // on its own page
+    function sideAt(index: int, at: point): string {
+        if (!page || index === currentTab)
+            return "";
+        const p = page.mapFromItem(null, at.x, at.y);
+        if (p.y < 0 || p.y > page.height || p.x < 0 || p.x > page.width)
+            return "";
+        return p.x < page.width / 3 ? "left" : p.x > page.width * 2 / 3 ? "right" : "";
+    }
+
+    // the dragged tab's folder (its pane you were in) beside this one's, and the tab goes
+    function dropTab(index: int, at: point) {
+        const side = sideAt(index, at);
+        dropSide = "";
+        draggedTab = -1;
+        if (side) {
+            page.openBeside((pages.itemAt(index) as TabPage).activePane.folder.path, side);
+            closeTab(index);
+        }
+    }
+
+    function openTabMenu(index: int, at: point) {
+        const tab = pages.itemAt(index) as TabPage;
+        menu.entries = [{ text: tab.split ? "Close split" : "Split view", icon: Icons.columns, run: () => {
+                              currentTab = index;
+                              tab.toggleSplit();
+                          } },
+                        { text: "Close tab", icon: Icons.x, run: () => closeTab(index) }];
+        menu.openAt(at.x, at.y);
     }
 
     function nextTab(by: int) {
@@ -429,6 +464,13 @@ Controls.ApplicationWindow {
             }
             onClosed: index => window.closeTab(index)
             onAdded: window.newTab(window.folderModel.path)
+            onMenuRequested: (index, at) => window.openTabMenu(index, at)
+            onDragged: (index, at) => {
+                window.draggedTab = index;
+                window.dragAt = at;
+                window.dropSide = window.sideAt(index, at);
+            }
+            onDropped: (index, at) => window.dropTab(index, at)
         }
 
         RowLayout {
@@ -458,6 +500,7 @@ Controls.ApplicationWindow {
 
                     delegate: TabPage {
                         mode: window.viewMode
+                        dropSide: window.dropSide // only the page on show is seen
                         focus: true
                         onActivated: row => window.activate(row)
                         onMenuRequested: at => window.openMenuAt(at.x, at.y)
@@ -476,6 +519,58 @@ Controls.ApplicationWindow {
             trash: window.atTrash && folderModel.totalCount > 0
             onSortRequested: at => window.openSortMenu(at)
             onEmptyTrashRequested: window.askEmptyTrash()
+        }
+    }
+
+    // the dragged tab, its chip following the pointer
+    Item {
+        id: dragged
+
+        readonly property var tab: window.tabTitles[window.draggedTab]
+
+        visible: window.draggedTab >= 0 && tab !== undefined
+        x: window.dragAt.x + 14
+        y: window.dragAt.y + 10
+        width: Math.min(260, ghostLabel.implicitWidth + (ghostGlyph.visible ? 22 : 0) + 32)
+        height: 36
+
+        Shadow {
+            anchors.fill: ghost
+            radius: ghost.radius
+            kind: Theme.shadowPanel
+        }
+
+        Rectangle {
+            id: ghost
+            anchors.fill: parent
+            radius: 18
+            color: Theme.bg // apart from the tiles and the lit side under it
+            border.color: Theme.overlay2
+            border.width: 1
+
+            Icon {
+                id: ghostGlyph
+                visible: dragged.tab ? dragged.tab.split : false
+                x: 16
+                anchors.verticalCenter: parent.verticalCenter
+                size: 14
+                paths: Icons.columns
+                color: Theme.subtext
+            }
+
+            Text {
+                id: ghostLabel
+                x: ghostGlyph.visible ? 16 + 22 : 16
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, ghost.width - x - 16)
+                text: dragged.tab ? dragged.tab.title : ""
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: Theme.text
+                font.family: Theme.fontUi
+                font.pixelSize: 13
+                font.weight: Font.Bold
+            }
         }
     }
 

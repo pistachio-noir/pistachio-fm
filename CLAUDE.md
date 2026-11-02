@@ -29,6 +29,11 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   model, each tab can split in two (F3); the tab row only from two tabs on; Ctrl+W closes the tab, the window with
   the last; tabs aren't restored on start. Main's `folderModel` is the folder of the pane you're in (`Pane` in a
   `TabPage`), so the toolbar, sidebar, menus, dialogs and status line work on it unchanged; the view mode is shared.
+  Right-click a tab: Split view / Close split and Close tab; a tab dragged onto the left or right third of the files
+  goes in the pane on that side of the tab on show (splitting it) and closes, its pane you were in if it was split;
+  the side lights in overlay2 as a folder under a file drag, and a copy of the tab's chip (bg, overlay2 border) follows
+  the pointer (owner's choices 2 Nov, no board). The drag is a mouse
+  drag inside the window (TabBar's dragged/dropped), not a platform drag.
 - The keys card (toolbar's keyboard button, F1, ?; owner's request 1 Nov, no board) lists the keys from data in
   `KeysDialog.qml`, chips as the shell launcher's cheat sheet: keep it in step with Main's Shortcuts and README.
 - Window corners, border and shadow are Hyprland's. Never edit the Hyprland config.

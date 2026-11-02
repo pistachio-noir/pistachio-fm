@@ -1,6 +1,6 @@
 // Runs the real app on a made-up home laid out like the design boards' Documents folder, takes the
 // boards' three pictures and a few more, and tries the mouse and keys on it: pfm-shots OUTDIR.
-// Writes grid.png, list-menu.png, trash.png, trash-place.png, rename.png, cut.png, paste-menu.png, drag.png, properties.png, open-with.png, new-file.png, tabs-split.png and keys.png,
+// Writes grid.png, list-menu.png, trash.png, trash-place.png, rename.png, cut.png, paste-menu.png, drag.png, properties.png, open-with.png, new-file.png, tabs-split.png, tab-menu.png, tab-drag.png and keys.png,
 // and prints a PASS or
 // FAIL line per check (exit code 1 on a FAIL). Offscreen (QT_QPA_PLATFORM=offscreen) it doesn't
 // touch the desktop; there, an icon of a row cut by the list's edge may show past the edge, which
@@ -88,6 +88,19 @@ QPoint placeAt(QQuickWindow *window, const QString &path)
     }
     QTest::qWait(50);
     return button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint();
+}
+
+// the centre of tab `index` in the tab row, or (-1, -1) if there's none
+QPoint tabAt(QQuickWindow *window, int index)
+{
+    QList<QQuickItem *> items = { window->contentItem() };
+    while (!items.isEmpty()) {
+        QQuickItem *item = items.takeFirst();
+        if (item->property("isCurrent").isValid() && item->property("index").toInt() == index)
+            return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+        items.append(item->childItems());
+    }
+    return { -1, -1 };
 }
 
 QDrag *findDrag(QQuickItem *item)
@@ -517,7 +530,41 @@ int main(int argc, char *argv[])
     QTest::qWait(300);
     QTest::mouseClick(window, Qt::MiddleButton, {}, tile(1)); // Notes
     check(waitFor([&] { return tabCount() == 2 && current() == notes; }), "middle-click on a folder opens it in a new tab");
-    QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+
+    // a tab's right-click menu, then a tab dragged onto a side of the files: Documents (split) onto Notes' left
+    const auto currentTab = [&] { return window->property("currentTab").toInt(); };
+    QTest::qWait(300);
+    QTest::mouseClick(window, Qt::RightButton, {}, tabAt(window, 0));
+    QTest::qWait(300);
+    save(window, out + QStringLiteral("/tab-menu.png"));
+    for (const auto key : { Qt::Key_Down, Qt::Key_Return }) // Split view
+        QTest::keyClick(window, key);
+    QTest::qWait(400); // past the menu's fade, which hands the keyboard back
+    check(currentTab() == 0 && page()->property("split").toBool() && page()->property("currentPane").toInt() == 1,
+          "right-click a tab: Split view goes to it and splits it, the new pane the one you're in");
+    QTest::keyClick(window, Qt::Key_Tab, Qt::ControlModifier);
+    waitFor([&] { return currentTab() == 1; });
+    const QPoint from = tabAt(window, 0);
+    QTest::mousePress(window, Qt::LeftButton, {}, from);
+    for (const QPoint to : { from + QPoint(0, 20), QPoint(300, 220), QPoint(300, 330) }) // the files' left third
+        QTest::mouseMove(window, to);
+    check(window->property("dropSide").toString() == QStringLiteral("left") && window->property("draggedTab").toInt() == 0,
+          "a tab dragged over the files' left lights that side, its chip under the pointer");
+    save(window, out + QStringLiteral("/tab-drag.png"));
+    QTest::mouseRelease(window, Qt::LeftButton, {}, QPoint(300, 330));
+    check(waitFor([&] { return tabCount() == 1 && page()->property("title").toString() == QStringLiteral("Documents · Notes"); }),
+          "…and dropped there, its folder is the left pane and the tab goes");
+    QTest::qWait(300);
+    check(page()->property("currentPane").toInt() == 0 && current() == docs && window->property("dropSide").toString().isEmpty()
+              && window->property("draggedTab").toInt() == -1,
+          "…the dropped pane the one you're in");
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    waitFor([&] { return tabCount() == 2; });
+    QTest::mouseClick(window, Qt::RightButton, {}, tabAt(window, 1));
+    QTest::qWait(300);
+    for (const auto key : { Qt::Key_Down, Qt::Key_Down, Qt::Key_Return }) // Close tab
+        QTest::keyClick(window, key);
+    check(waitFor([&] { return tabCount() == 1; }), "Close tab in a tab's menu closes it");
 
     // 13. the toolbar's keyboard button lists every key
     QTest::qWait(300);

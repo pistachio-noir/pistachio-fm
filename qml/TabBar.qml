@@ -4,7 +4,8 @@ import QtQuick
 
 // The tab row of the tabs-split board, under the toolbar while there are two tabs or more: the current
 // tab is the pistachio chip (as the current place), each with its ×, a split one with the split glyph;
-// + adds one. Middle-click closes a tab.
+// + adds one. Middle-click closes a tab, right-click asks for its menu; a tab dragged off the row says
+// where it is (dragged) and where it was let go (dropped), in window coordinates.
 Item {
     id: root
 
@@ -14,6 +15,9 @@ Item {
     signal picked(int index)
     signal closed(int index)
     signal added
+    signal menuRequested(int index, point at)
+    signal dragged(int index, point at)
+    signal dropped(int index, point at)
 
     implicitHeight: 48
 
@@ -48,10 +52,44 @@ Item {
 
                 MouseArea {
                     id: tabMouse
+
+                    property point pressedAt
+                    property bool dragging // moved past the drag distance since the press
+
                     anchors.fill: parent
                     hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-                    onClicked: event => event.button === Qt.MiddleButton ? root.closed(tab.index) : root.picked(tab.index)
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                    cursorShape: dragging && pressed ? Qt.ClosedHandCursor : Qt.ArrowCursor
+                    onPressed: event => {
+                        pressedAt = Qt.point(event.x, event.y);
+                        dragging = false;
+                    }
+                    onPositionChanged: event => {
+                        if (!(event.buttons & Qt.LeftButton))
+                            return;
+                        if (!dragging)
+                            dragging = Math.hypot(event.x - pressedAt.x, event.y - pressedAt.y) > Application.styleHints.startDragDistance;
+                        if (dragging)
+                            root.dragged(tab.index, mapToItem(null, event.x, event.y));
+                    }
+                    onReleased: event => {
+                        if (dragging)
+                            root.dropped(tab.index, mapToItem(null, event.x, event.y));
+                    }
+                    onCanceled: {
+                        if (dragging)
+                            root.dropped(tab.index, Qt.point(-1, -1));
+                    }
+                    onClicked: event => {
+                        if (dragging)
+                            return;
+                        if (event.button === Qt.MiddleButton)
+                            root.closed(tab.index);
+                        else if (event.button === Qt.RightButton)
+                            root.menuRequested(tab.index, mapToItem(null, event.x, event.y));
+                        else
+                            root.picked(tab.index);
+                    }
                 }
 
                 Icon {

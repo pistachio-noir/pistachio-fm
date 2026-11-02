@@ -11,6 +11,7 @@ Item {
     property string mode: "grid"
     property bool split
     property int currentPane // 0 the first, 1 the second
+    property string dropSide // "left" or "right" while a tab is dragged there: where it would land
 
     readonly property Pane activePane: split && currentPane === 1 && second.item ? second.item as Pane : first
     // "Documents", or "Documents · Pictures" when split
@@ -38,6 +39,14 @@ Item {
             split = false;
             currentPane = 0;
         }
+        Qt.callLater(() => activePane.view.forceActiveFocus());
+    }
+
+    // a tab dropped on a side: `path` in the pane there (splitting first), and that's the pane you're in
+    function openBeside(path: string, side: string) {
+        split = true;
+        currentPane = side === "left" ? 0 : 1;
+        activePane.folder.go(path);
         Qt.callLater(() => activePane.view.forceActiveFocus());
     }
 
@@ -85,6 +94,23 @@ Item {
             onTyped: text => root.typed(text)
             onOpenInTab: path => root.openInTab(path)
             onFailed: message => root.failed(message)
+        }
+    }
+
+    // where a dragged tab would land, lit as a folder that files are dragged over
+    Rectangle {
+        visible: root.dropSide !== ""
+        x: root.dropSide === "left" ? 0 : (root.width + 25) / 2
+        width: (root.width - 25) / 2
+        height: root.height - 16
+        radius: Theme.tileRadius
+        color: Theme.overlay2
+
+        Icon {
+            anchors.centerIn: parent
+            size: 32
+            paths: Icons.columns
+            color: Theme.subtext
         }
     }
 }
