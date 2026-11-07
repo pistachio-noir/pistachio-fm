@@ -116,16 +116,79 @@ FocusScope {
         event.accepted = true;
     }
 
-    // empty space, under the views: they pass on presses no tile or row takes
+    // the rows a box (in the view's content coordinates) touches
+    function rowsIn(box: rect): list<int> {
+        const rows = [];
+        if (mode === "grid") {
+            for (let r = Math.max(0, Math.floor(box.y / grid.cellHeight)); r * grid.cellHeight <= box.y + box.height; ++r) {
+                const top = r * grid.cellHeight;
+                if (box.y > top + grid.cellHeight - 10 || box.y + box.height < top) // in the gap under the row
+                    continue;
+                for (let c = Math.max(0, Math.floor(box.x / grid.cellWidth)); c < grid.columns && c * grid.cellWidth <= box.x + box.width; ++c) {
+                    const index = r * grid.columns + c;
+                    if (index < folder.count && box.x <= (c + 1) * grid.cellWidth - 10)
+                        rows.push(index);
+                }
+            }
+        } else {
+            const step = 44 + list.spacing;
+            for (let i = Math.max(0, Math.floor(box.y / step)); i < folder.count && i * step <= box.y + box.height; ++i) {
+                if (box.y <= i * step + 44)
+                    rows.push(i);
+            }
+        }
+        return rows;
+    }
+
+    // empty space, under the views: they pass on presses no tile or row takes. A drag there draws a box
+    // that selects what it touches (with Ctrl, on top of what was selected)
     MouseArea {
+        id: space
+
+        property point from // in the view's content, so it stays put while the wheel scrolls
+        property var kept: []
+        property bool boxing
+
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onPressed: event => {
             root.forceActiveFocus();
-            root.folder.clearSelection();
+            boxing = false;
+            from = mapToItem(root.view.contentItem, event.x, event.y);
+            kept = event.modifiers & Qt.ControlModifier ? root.folder.selectedPaths : [];
+            if (!(event.modifiers & Qt.ControlModifier))
+                root.folder.clearSelection();
             if (event.button === Qt.RightButton)
                 root.menuRequested(Qt.point(event.x, event.y), false);
         }
+        onPositionChanged: event => {
+            if (!(event.buttons & Qt.LeftButton))
+                return;
+            const to = mapToItem(root.view.contentItem, event.x, event.y);
+            if (!boxing && Math.hypot(to.x - from.x, to.y - from.y) < Application.styleHints.startDragDistance)
+                return;
+            boxing = true;
+            const box = Qt.rect(Math.min(from.x, to.x), Math.min(from.y, to.y), Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+            const start = root.view.contentItem.mapToItem(root, box.x, box.y);
+            band.x = start.x;
+            band.y = start.y;
+            band.width = box.width;
+            band.height = box.height;
+            root.folder.selectPaths(kept.concat(root.rowsIn(box).map(row => root.folder.get(row).path)));
+        }
+        onReleased: boxing = false
+        onCanceled: boxing = false
+    }
+
+    // the box being drawn, neutral as everything that isn't the selection itself
+    Rectangle {
+        id: band
+        z: 1
+        visible: space.boxing
+        radius: 6
+        color: Qt.rgba(Theme.overlay2.r, Theme.overlay2.g, Theme.overlay2.b, 0.45)
+        border.color: Theme.overlay2
+        border.width: 1
     }
 
     // drops on empty space, or on a file, land in this folder

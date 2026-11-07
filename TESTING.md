@@ -70,6 +70,16 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 - [ ] Ctrl+C / Ctrl+V / Ctrl+Z in the search field and the path bar work on their text, not the files
 - [ ] Copy path, then paste it in a terminal (on Wayland the copy lives as long as the app does, unless a clipboard manager keeps it)
 - [ ] Compress one file, a folder, several files: the .zip appears, selected; a second time gives "… (2).zip"
+- [ ] Extract here on a .zip, a .tar.gz, a .7z: a folder named after it, "(2)" the second time; Ctrl+Z trashes it; a
+  broken archive says why and leaves nothing behind
+- [ ] Right-click empty space, Open in terminal: your terminal opens in that folder
+- [ ] A big paste (a few GB to a stick): Stop in the status bar stops it; the half-copied item is gone, the rest stays
+- [ ] Pictures show in their badges (JPEG, PNG, WebP; a phone photo the right way up); RAW photos keep the glyph;
+  a folder of a few thousand photos scrolls without stutter
+- [ ] Drag a box on empty space in the grid and the list; Ctrl adds; a click on empty space clears
+- [ ] Ctrl+D, "Add to bookmarks", and a folder dropped on the sidebar each add a bookmark; it's lit when you're in
+  it; right-click removes it; Nautilus shows the same bookmarks, and one added there shows here within seconds
+- [ ] Open with: the apps' real icons show (they never did before 7 Nov: the icon provider wasn't registered)
 - [ ] Move to trash (Delete): the dialog lists the items; Enter confirms; they're in `~/.local/share/Trash/files`
 - [ ] Tabs: Ctrl+T, the + and "Open in new tab"/middle-click on a folder; the row shows only with two or more; click,
   Ctrl+Tab and Ctrl+Shift+Tab switch, each keeps its folder, history and search; × , middle-click and Ctrl+W close
@@ -99,5 +109,5 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 ## Not built yet
 
 A picture under the cursor while dragging (Hyprland shows only the cursor), dropping on breadcrumbs, scrolling or
-opening folders while dragging over them, thumbnails, search in subfolders, reordering tabs or pulling one out into a window of its own, encrypted drives (udiskie would have to ask for the password), powering a stick off after unmounting, properties of several items at once or of the folder you're in, changing
+opening folders while dragging over them, thumbnails of videos and PDFs, search in subfolders, scrolling while drag-selecting, reordering tabs or pulling one out into a window of its own, encrypted drives (udiskie would have to ask for the password), powering a stick off after unmounting, properties of several items at once or of the folder you're in, changing
 permissions, redo, a "Replace?" question when a pasted name is taken (both are kept), cancelling a paste,.

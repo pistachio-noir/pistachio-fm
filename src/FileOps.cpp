@@ -373,8 +373,8 @@ void FileOps::compress(const QStringList &paths, const QString &dir)
 {
     if (paths.isEmpty())
         return;
-    const QString bsdtar = QStandardPaths::findExecutable(QStringLiteral("bsdtar"));
-    if (bsdtar.isEmpty()) {
+    const QString bsdtarPath = QStandardPaths::findExecutable(QStringLiteral("bsdtar"));
+    if (bsdtarPath.isEmpty()) {
         emit failed(QStringLiteral("Compress needs bsdtar (pacman -S libarchive)"));
         return;
     }
@@ -390,30 +390,69 @@ void FileOps::compress(const QStringList &paths, const QString &dir)
     QStringList args = { QStringLiteral("-a"), QStringLiteral("-cf"), archive, QStringLiteral("-C"), dir };
     for (const QString &path : paths)
         args.append(QStringLiteral("./") + nameOf(path));
+    bsdtar(bsdtarPath, args, archive, Step::Compressed);
+}
 
+void FileOps::extract(const QString &archive, const QString &dir)
+{
+    const QString bsdtarPath = QStandardPaths::findExecutable(QStringLiteral("bsdtar"));
+    if (bsdtarPath.isEmpty()) {
+        emit failed(QStringLiteral("Extract needs bsdtar (pacman -S libarchive)"));
+        return;
+    }
+    // "photos.tar.gz" into "photos/", "photos (2)/" if that's taken
+    const QString name = nameOf(archive);
+    const QString suffix = QMimeDatabase().suffixForFileName(name);
+    QString base = suffix.isEmpty() ? QFileInfo(name).completeBaseName() : name.chopped(suffix.size() + 1);
+    if (base.isEmpty())
+        base = name;
+    const QString folder = join(dir, Transfer::uniqueName(dir, base));
+    if (!QDir().mkdir(folder)) {
+        emit failed(QStringLiteral("Couldn't make “%1”").arg(nameOf(folder)));
+        return;
+    }
+    // without -P, bsdtar keeps everything inside the folder (no "..", no absolute paths, no writing through symlinks)
+    bsdtar(bsdtarPath, { QStringLiteral("-xf"), archive, QStringLiteral("-C"), folder }, folder, Step::Extracted);
+}
+
+// runs bsdtar in the background; `made` is what it makes: removed if it fails, remembered for undo if not
+void FileOps::bsdtar(const QString &program, const QStringList &args, const QString &made, Step::Kind kind)
+{
+    const bool compressing = kind == Step::Compressed;
     auto *process = new QProcess(this);
     process->setProcessChannelMode(QProcess::MergedChannels);
-    connect(process, &QProcess::finished, this, [this, process, archive](int code, QProcess::ExitStatus status) {
+    connect(process, &QProcess::finished, this, [this, process, made, kind, compressing](int code, QProcess::ExitStatus status) {
         ended();
         if (status != QProcess::NormalExit || code != 0) {
-            QFile::remove(archive);
+            Transfer::removeAll(made);
             const QString output = QString::fromLocal8Bit(process->readAll()).trimmed().section(u'\n', 0, 0);
-            emit failed(QStringLiteral("Couldn't compress: %1").arg(output.isEmpty() ? QStringLiteral("bsdtar failed") : output));
+            emit failed(QStringLiteral("Couldn't %1: %2").arg(compressing ? QStringLiteral("compress") : QStringLiteral("extract"),
+                                                             output.isEmpty() ? QStringLiteral("bsdtar failed") : output));
         } else {
-            remember({ Step::Compressed, {}, { archive } });
-            emit finished(QStringLiteral("compress"), { archive });
+            remember({ kind, {}, { made } });
+            emit finished(compressing ? QStringLiteral("compress") : QStringLiteral("extract"), { made });
         }
         process->deleteLater();
     });
-    connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error) {
+    connect(process, &QProcess::errorOccurred, this, [this, process, made](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return; // the others end in finished()
         ended();
+        Transfer::removeAll(made);
         emit failed(QStringLiteral("Couldn't start bsdtar"));
         process->deleteLater();
     });
     started();
-    process->start(bsdtar, args);
+    process->start(program, args);
+}
+
+void FileOps::stop()
+{
+    if (!busy())
+        return;
+    *m_stop = true; // the running transfer and those queued hold this one
+    m_stop = std::make_shared<std::atomic<bool>>(false);
+    emit notice(QStringLiteral("Stopped"));
 }
 
 void FileOps::undo()
@@ -427,9 +466,11 @@ void FileOps::undo()
     case Step::Copied:
     case Step::Restored:
     case Step::Compressed:
+    case Step::Extracted:
         // made by this app, so they go where everything else goes: the trash
         if (trashAll(step.made).isEmpty()) {
-            const char *what = step.kind == Step::Copied ? "copy" : step.kind == Step::Restored ? "restore" : "compress";
+            const char *what = step.kind == Step::Copied ? "copy" : step.kind == Step::Restored ? "restore"
+                             : step.kind == Step::Compressed ? "compress" : "extract";
             emit notice(QStringLiteral("Undid %1").arg(QLatin1String(what)));
         }
         emit finished(QStringLiteral("undo"), {});

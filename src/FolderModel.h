@@ -25,6 +25,7 @@ struct FileEntry
     int itemCount = Counting; // folders only
     bool isDir = false;
     bool hidden = false;
+    bool picture = false; // one Qt can show (its thumbnail)
 
     enum : int { Counting = -1, Unreadable = -2 };
 };
@@ -77,6 +78,7 @@ public:
         DetailRole, // the grid tile's second line: "2.4 MB · Oct 27", or "14 items"
         SelectedRole,
         HiddenRole,
+        PictureRole,
     };
 
     explicit FolderModel(QObject *parent = nullptr);

@@ -269,8 +269,11 @@ Controls.ApplicationWindow {
         if (inTrash)
             return [{ text: "Open", icon: Icons.file, run: openSelection }, copyPath, ...info, { separator: true }, remove];
         const entries = [{ text: "Open", icon: Icons.file, run: openSelection }];
-        if (paths.length === 1 && folderModel.get(folderModel.rowOf(paths[0])).isDir)
-            entries.push({ text: "Open in new tab", icon: Icons.plus, run: () => newTab(paths[0]) });
+        if (paths.length === 1 && folderModel.get(folderModel.rowOf(paths[0])).isDir) {
+            entries.push({ text: "Open in new tab", icon: Icons.plus, run: () => newTab(paths[0]) },
+                         Places.isBookmarked(paths[0]) ? { text: "Remove from bookmarks", icon: Icons.bookmark, run: () => Places.removeBookmark(paths[0]) }
+                                                      : { text: "Add to bookmarks", icon: Icons.bookmark, run: () => Places.addBookmark(paths[0]) });
+        }
         if (paths.length === 1 && !folderModel.get(folderModel.rowOf(paths[0])).isDir)
             entries.push({ text: "Open with…", icon: Icons.externalLink, run: () => openWith.show(paths[0]) });
         if (paths.length === 1)
@@ -278,8 +281,10 @@ Controls.ApplicationWindow {
         entries.push({ text: "Cut", icon: Icons.scissors, run: () => FileOps.cut(paths) },
                      { text: "Copy", icon: Icons.copy, run: () => FileOps.copy(paths) },
                      copyPath,
-                     { text: "Compress", icon: Icons.archive, run: () => FileOps.compress(paths, folderModel.path) },
-                     ...info,
+                     { text: "Compress", icon: Icons.archive, run: () => FileOps.compress(paths, folderModel.path) });
+        if (paths.length === 1 && folderModel.get(folderModel.rowOf(paths[0])).kind === "archive")
+            entries.push({ text: "Extract here", icon: Icons.extract, run: () => FileOps.extract(paths[0], folderModel.path) });
+        entries.push(...info,
                      { separator: true },
                      { text: "Move to trash", icon: Icons.trash2, danger: true, run: askTrash });
         return entries;
@@ -296,7 +301,7 @@ Controls.ApplicationWindow {
                          { text: "New file", icon: Icons.filePlus, run: askNewFile }];
         if (FileOps.canPaste)
             entries.push({ text: "Paste", icon: Icons.clipboard, run: pasteHere });
-        entries.push(hidden);
+        entries.push({ text: "Open in terminal", icon: Icons.terminal, run: () => Apps.openTerminal(folderModel.path) }, hidden);
         return entries;
     }
 
@@ -482,6 +487,10 @@ Controls.ApplicationWindow {
                 Layout.preferredWidth: 208
                 Layout.fillHeight: true
                 folder: folderModel
+                onBookmarkMenu: (path, at) => {
+                    menu.entries = [{ text: "Remove from bookmarks", icon: Icons.bookmark, run: () => Places.removeBookmark(path) }];
+                    menu.openAt(at.x, at.y);
+                }
             }
 
             StackLayout {
@@ -639,6 +648,7 @@ Controls.ApplicationWindow {
     Shortcut { sequences: ["Ctrl+Tab", "Ctrl+PgDown"]; onActivated: window.nextTab(1) }
     Shortcut { sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab", "Ctrl+Shift+Backtab", "Ctrl+PgUp"]; onActivated: window.nextTab(-1) }
     Shortcut { sequence: "F3"; onActivated: if (window.page) window.page.toggleSplit() }
+    Shortcut { sequence: "Ctrl+D"; onActivated: if (!window.inTrash) Places.addBookmark(window.folderModel.path) }
     Shortcut { sequences: [StandardKey.Quit]; onActivated: window.close() }
     Shortcut { sequences: ["F1", "?"]; onActivated: keys.open() }
 }

@@ -67,9 +67,13 @@ public:
     Q_INVOKABLE void copyPaths(const QStringList &paths); // as text
     // a .zip of these, next to them in `dir`, through bsdtar (libarchive)
     Q_INVOKABLE void compress(const QStringList &paths, const QString &dir);
+    // into a new folder named after it, in `dir`
+    Q_INVOKABLE void extract(const QString &archive, const QString &dir);
 
-    // takes back the latest paste, rename, new folder or file, move to trash, restore or compress
+    // takes back the latest paste, rename, new folder or file, move to trash, restore, compress or extract
     Q_INVOKABLE void undo();
+    // stops the paste or drop under way and drops the ones waiting; what's done stays (and can be undone)
+    Q_INVOKABLE void stop();
 
     // what Properties shows, as text: { name, kind, type, size, location, deletedFrom, deleted, created,
     // modified, permissions, link, measure }; "" for what's unknown or doesn't apply (a trashed item has
@@ -96,9 +100,9 @@ private:
     // what undo takes back
     struct Step
     {
-        enum Kind { Copied, Moved, Renamed, MadeFolder, MadeFile, Trashed, Restored, Compressed } kind;
+        enum Kind { Copied, Moved, Renamed, MadeFolder, MadeFile, Trashed, Restored, Compressed, Extracted } kind;
         QList<std::pair<QString, QString>> moves; // Moved, Renamed, Trashed: (where it was, where it went)
-        QStringList made; // Copied, MadeFolder, MadeFile, Restored, Compressed: what to take away
+        QStringList made; // Copied, MadeFolder, MadeFile, Restored, Compressed, Extracted: what to take away
     };
 
     void remember(const Step &step);
@@ -109,6 +113,7 @@ private:
     void readClipboard();
     void transfer(const QList<Transfer::Item> &items, bool move, const std::function<void(const Transfer::Result &)> &then);
     void setProgress(const QString &text);
+    void bsdtar(const QString &program, const QStringList &args, const QString &made, Step::Kind kind);
     void started();
     void ended();
 

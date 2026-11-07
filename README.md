@@ -5,7 +5,7 @@ everything that touches files. The design is in `design/pistachio-file-manager/`
 
 ## Build and run
 
-Needs Qt 6.9 or newer (`qt6-base`, `qt6-declarative`), CMake, Ninja, and `bsdtar` from libarchive for Compress.
+Needs Qt 6.9 or newer (`qt6-base`, `qt6-declarative`), CMake, Ninja, and `bsdtar` from libarchive for Compress and Extract here.
 Fonts: Manrope and JetBrains Mono, as for the shell.
 
 ```sh
@@ -19,6 +19,8 @@ To install it as `~/.local/bin/pistachio-fm` with a desktop entry ("Pistachio FM
 `cmake --install build --prefix ~/.local`. The installed entry runs the app by its full path, so launchers whose
 PATH lacks `~/.local/bin` (the Pistachio shell's does) start it too.
 The window's class (Wayland app id) is `pistachio-fm`.
+The version, in the status bar's corner and `pistachio-fm --version`, is `1 · <short hash>`: every build reads
+HEAD's short hash (`git rev-parse --short HEAD`), so it follows the repo; bump the major in `CMakeLists.txt`'s `project()`.
 
 ## Keys
 
@@ -40,9 +42,14 @@ The window's class (Wayland app id) is `pistachio-fm`.
 | Ctrl+Alt+N | new file: empty, any name and extension ("New file.txt" to start; type over the name, edit the extension) |
 | Ctrl+C / Ctrl+X / Ctrl+V | copy / cut / paste files (shared with other apps: Nautilus, Dolphin, a terminal gets the paths) |
 | Drag and drop | onto a folder, a sidebar place or empty space, to and from other apps: a move on the same drive, a copy to another; hold Ctrl to copy, Shift to move. Onto Trash: move to trash |
-| Ctrl+Z | undo the latest paste or drop, rename, new folder or file, move to trash, restore or compress (up to 10) |
+| Ctrl+Z | undo the latest paste or drop, rename, new folder or file, move to trash, restore, compress or extract (up to 10) |
 | Delete / Shift+Delete | move to trash / delete forever (both ask first) |
 | Trash | the last of the sidebar's Places; in it, right-click an item to Restore or Delete forever, and the status bar's Empty trash empties it (it asks first). Properties says where an item was deleted from, and when |
+| Ctrl+D | bookmark the folder you're in; also "Add to bookmarks" on a folder's right-click, or drop a folder on the sidebar (off a place). Bookmarks live in `~/.config/gtk-3.0/bookmarks`, shared with Nautilus; right-click one to remove it |
+| Drag on empty space | a box: selects what it touches; with Ctrl, on top of the selection |
+| Right-click an archive | Extract here: into a new folder named after it ("photos.tar.gz" → "photos/") |
+| Right-click empty space | Open in terminal (`$TERMINAL`, or kitty) in that folder |
+| Stop (status bar) | while a paste or drop shows its progress: stops it and the ones waiting; what's done stays |
 | Ctrl+H | hidden files |
 | Ctrl+1 / Ctrl+2 | grid / list |
 | Ctrl+T / Ctrl+W | new tab (same folder) / close tab (the window with the last); middle-click a folder or "Open in new tab" opens it in one, middle-click a tab closes it |
@@ -58,11 +65,12 @@ The window's class (Wayland app id) is `pistachio-fm`.
 - `src/`: the backend, registered with QML as module `Pistachio.Files`
   - `FolderModel`: a folder's entries (listed off the GUI thread, kept live with a file watcher), selection,
     search filter, sort, back/forward history, the status line
-  - `FileOps`: open, rename, new folder, trash/restore/delete (freedesktop.org trash), copy path, compress,
+  - `FileOps`: open, rename, new folder, trash/restore/delete (freedesktop.org trash), copy path, compress and extract,
     the clipboard (copy, cut, paste), drops and undo
   - `Apps`: installed apps (desktop entries), which open a file's type, the default for a type (`mimeapps.list`), starting one on a file
+    or a terminal; the image providers for app icons and pictures' round thumbnails
   - `Transfer`: the copying and moving behind paste, drop and undo, on a worker thread, with its progress line
-  - `Places`: the sidebar's places and devices (removable drives that aren't mounted, from `lsblk`), mounting and
+  - `Places`: the sidebar's places, bookmarks (the GTK bookmarks file) and devices (removable drives that aren't mounted, from `lsblk`), mounting and
     unmounting them with udiskie, breadcrumbs
   - `Format`: "2.4 MB", "Oct 27", "14 items", file kinds
 - `qml/`: the screens; `Theme.qml` holds every colour and size, `Icons.qml` the board's Lucide paths

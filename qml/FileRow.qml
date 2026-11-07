@@ -13,6 +13,7 @@ Rectangle {
     required property string sizeText
     required property bool selected
     required property bool isDir
+    required property bool picture
     property var dragData // what dragging carries (the selection's URLs), or null where nothing may be dragged
 
     signal press(int button, int modifiers, point at)
@@ -47,6 +48,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         size: 32
         kind: root.kind
+        path: root.picture ? root.path : ""
         selected: root.selected
         hovered: mouse.containsMouse || folderDrop.containsDrag
     }

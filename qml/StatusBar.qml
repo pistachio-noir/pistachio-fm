@@ -1,9 +1,9 @@
 import QtQuick
 
-// The window's foot: item count, then the selection or the free space, the sort chip, and in the
-// trash an Empty trash chip. flash()
+// The window's foot: item count, then the selection or the free space, the sort chip, in the
+// trash an Empty trash chip, and the version in the corner. flash()
 // puts a problem there in terracotta for a few seconds, note() a plain message ("Undid rename");
-// while a paste takes a while, its progress shows instead of the count.
+// while a paste takes a while, its progress shows instead of the count, with a Stop chip.
 Item {
     id: root
 
@@ -38,7 +38,7 @@ Item {
     Text {
         x: 24
         anchors.verticalCenter: parent.verticalCenter
-        width: (root.trash ? emptyTrash.x : chip.x) - 24 - 16
+        width: (stop.visible ? stop.x : root.trash ? emptyTrash.x : chip.x) - 24 - 16
         elide: Text.ElideRight
         text: root.message || FileOps.progress || root.folder.summary
         textFormat: Text.PlainText
@@ -55,10 +55,24 @@ Item {
         onTriggered: root.message = ""
     }
 
-    Chip {
-        id: chip
+    Text {
+        id: version
         anchors.right: parent.right
         anchors.rightMargin: 24
+        anchors.verticalCenter: parent.verticalCenter
+        text: "v" + Qt.application.version
+        textFormat: Text.PlainText
+        color: Theme.subtext
+        font.family: Theme.fontUi
+        font.pixelSize: 12
+        font.weight: Font.Medium
+        font.features: { "tnum": 1 }
+    }
+
+    Chip {
+        id: chip
+        anchors.right: version.left
+        anchors.rightMargin: 16
         anchors.verticalCenter: parent.verticalCenter
         text: "Sorted by " + ["name", "date", "size", "type"][root.folder.sortKey]
         onClicked: root.sortRequested(Qt.point(chip.x, chip.y))
@@ -75,5 +89,16 @@ Item {
         text: "Empty trash"
         textColor: Theme.terracotta
         onClicked: root.emptyTrashRequested()
+    }
+
+    Chip {
+        id: stop
+        objectName: "stopPaste"
+        visible: FileOps.progress !== ""
+        anchors.right: root.trash ? emptyTrash.left : chip.left
+        anchors.rightMargin: 8
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Stop"
+        onClicked: FileOps.stop()
     }
 }

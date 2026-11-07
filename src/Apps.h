@@ -20,8 +20,9 @@ class Apps : public QObject
     QML_SINGLETON
 
 public:
-    explicit Apps(QObject *parent = nullptr);
-    static Apps *create(QQmlEngine *engine, QJSEngine *); // adds the icon provider to the engine
+    // no default: QML takes a default-constructible singleton's constructor over create(), and the providers go missing
+    explicit Apps(QObject *parent);
+    static Apps *create(QQmlEngine *engine, QJSEngine *); // adds the app icon and thumbnail providers to the engine
 
     // { mime, type: "Markdown document", apps: [{ id, name, icon, isDefault, terminal }] }: the default first, then the
     // apps for the type itself, then for what it's a kind of (text editors for Markdown), each by name.
@@ -35,6 +36,7 @@ public:
     // each file with its type's default (a double-click, Enter). FM starts the app itself: Qt's openUrl
     // goes through the desktop portal, which asks again whatever mimeapps.list says.
     Q_INVOKABLE void openFiles(const QStringList &paths);
+    Q_INVOKABLE bool openTerminal(const QString &dir); // $TERMINAL (or kitty) in `dir`
 
     // an Exec= line as program and arguments, `path` where it asks for a file (appended if it doesn't)
     static QStringList command(const QString &exec, const QString &path);

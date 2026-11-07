@@ -32,6 +32,7 @@ Controls.Popup {
             [["Del"], "Move to trash"],
             [["Shift", "Del"], "Delete forever"],
             [["Alt", "Enter"], "Properties"],
+            [["Ctrl", "D"], "Bookmark this folder"],
         ] },
         { title: "View and tabs", keys: [
             [["Ctrl", "A"], "Select all"],

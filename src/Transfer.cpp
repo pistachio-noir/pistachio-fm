@@ -287,6 +287,8 @@ Result run(const QList<Item> &items, bool move, const std::atomic<bool> &stop,
     QList<Item> toCopy; // for a move, the ones on another drive
 
     for (const Item &item : items) {
+        if (stop)
+            break;
         const QString dir = QDir::cleanPath(item.dir);
         if (insideItself(item.source, dir)) {
             result.intoItself.append(item.source);

@@ -1,6 +1,6 @@
 // Runs the real app on a made-up home laid out like the design boards' Documents folder, takes the
 // boards' three pictures and a few more, and tries the mouse and keys on it: pfm-shots OUTDIR.
-// Writes grid.png, list-menu.png, trash.png, trash-place.png, rename.png, cut.png, paste-menu.png, drag.png, properties.png, open-with.png, new-file.png, tabs-split.png, tab-menu.png, tab-drag.png and keys.png,
+// Writes grid.png, list-menu.png, trash.png, trash-place.png, rename.png, cut.png, paste-menu.png, drag.png, properties.png, open-with.png, new-file.png, tabs-split.png, tab-menu.png, tab-drag.png, keys.png, pictures.png, box-select.png and bookmarks.png,
 // and prints a PASS or
 // FAIL line per check (exit code 1 on a FAIL). Offscreen (QT_QPA_PLATFORM=offscreen) it doesn't
 // touch the desktop; there, an icon of a row cut by the list's edge may show past the edge, which
@@ -15,6 +15,7 @@
 #include <QFontDatabase>
 #include <QFile>
 #include <QGuiApplication>
+#include <QImage>
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -173,6 +174,7 @@ int main(int argc, char *argv[])
 
     // fonts first, from the real home (~/.local/share/fonts), before HOME moves to the made-up one
     QGuiApplication app(argc, argv);
+    app.setApplicationVersion(QStringLiteral("1 · a1b2c3d")); // a sample for the status bar's corner (the app's comes from git)
     app.setDesktopFileName(QStringLiteral("pistachio-fm-shots"));
     QFontDatabase::families();
 
@@ -574,6 +576,87 @@ int main(int argc, char *argv[])
     save(window, out + QStringLiteral("/keys.png"));
     QTest::keyClick(window, Qt::Key_Escape);
     check(keysCard && waitFor([&] { return !keysCard->property("visible").toBool(); }), "…and Escape closes it");
+
+    // 14. a picture shows itself in its badge; anything else keeps the kind's glyph
+    QTest::qWait(300);
+    const QString pictures = home + QStringLiteral("/Pictures");
+    QDir().mkpath(pictures);
+    QImage sunset(400, 300, QImage::Format_RGB32);
+    for (int y = 0; y < sunset.height(); ++y)
+        std::fill_n(reinterpret_cast<QRgb *>(sunset.scanLine(y)), sunset.width(), qRgb(230, 120 + y / 3, 60));
+    sunset.save(pictures + QStringLiteral("/sunset #1.png")); // a name that needs escaping in a URL
+    makeFile(pictures + QStringLiteral("/broken.png"), 2000, QDateTime::currentDateTime());
+    // the first tab's folder went with it (the drag above): from here on, the one on show
+    folder = qobject_cast<FolderModel *>(window->property("folder").value<QObject *>());
+    folder->go(pictures);
+    QQuickItem *thumbnail = nullptr;
+    const auto thumbnails = [&] {
+        int ready = 0;
+        QList<QQuickItem *> items = { window->contentItem() };
+        while (!items.isEmpty()) {
+            QQuickItem *item = items.takeFirst();
+            if (item->inherits("QQuickImage") && item->property("status").toInt() == 1 /* Ready */
+                && item->property("source").toUrl().toString().startsWith(QStringLiteral("image://thumbnail/"))) {
+                ++ready;
+                thumbnail = item;
+            }
+            items.append(item->childItems());
+        }
+        return ready;
+    };
+    check(waitFor([&] { return folder->path() == pictures && thumbnails() == 1; }), "a picture shows itself in its badge, a broken one doesn't");
+    QTest::qWait(100);
+    if (thumbnail) {
+        const QPoint middle = thumbnail->mapToScene(QPointF(thumbnail->width() / 2, thumbnail->height() / 2)).toPoint();
+        const QColor seen = window->grabWindow().pixelColor(middle * window->devicePixelRatio());
+        check(seen.red() > 200 && seen.blue() < 100, qPrintable(QStringLiteral("…the sunset's orange, there (%1)").arg(seen.name())));
+    }
+    save(window, out + QStringLiteral("/pictures.png"));
+
+    // 15. a box dragged from empty space selects what it touches; Ctrl keeps what was selected
+    QTest::qWait(300);
+    QTest::mousePress(window, Qt::LeftButton, {}, QPoint(480, 320)); // under the two pictures
+    for (const QPoint to : { QPoint(470, 300), QPoint(400, 220), QPoint(300, 150) })
+        QTest::mouseMove(window, to);
+    check(waitFor([&] { return folder->selectedCount() == 2; }), "a box dragged over both pictures selects both");
+    save(window, out + QStringLiteral("/box-select.png"));
+    QTest::mouseRelease(window, Qt::LeftButton, {}, QPoint(300, 150));
+    QTest::qWait(100);
+    check(folder->selectedCount() == 2, "…and they stay selected after");
+    QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(480, 320));
+    check(waitFor([&] { return folder->selectedCount() == 0; }), "a click on empty space clears them");
+    QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(300, 150)); // broken.png
+    QTest::mousePress(window, Qt::LeftButton, Qt::ControlModifier, QPoint(540, 320));
+    for (const QPoint to : { QPoint(530, 300), QPoint(500, 150) }) // only over the sunset
+        QTest::mouseMove(window, to);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::ControlModifier, QPoint(500, 150));
+    check(waitFor([&] { return folder->selectedCount() == 2; }), "with Ctrl, the box adds to what was selected");
+    QTest::keyClick(window, Qt::Key_2, Qt::ControlModifier); // the list
+    QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(480, 400));
+    QTest::mousePress(window, Qt::LeftButton, {}, QPoint(480, 400));
+    for (const QPoint to : { QPoint(470, 380), QPoint(400, 300), QPoint(400, 200) }) // up to the second row
+        QTest::mouseMove(window, to);
+    QTest::mouseRelease(window, Qt::LeftButton, {}, QPoint(400, 200));
+    check(waitFor([&] { return folder->selectedCount() == 1; }), "in the list, the box selects the rows it touches");
+    QTest::keyClick(window, Qt::Key_1, Qt::ControlModifier);
+
+    // 16. Ctrl+D bookmarks the folder you're in: it's under Bookmarks, lit, and opens from there; right-click removes it
+    QTest::qWait(300);
+    folder->go(notes);
+    waitFor([&] { return folder->path() == notes; });
+    QTest::keyClick(window, Qt::Key_D, Qt::ControlModifier);
+    check(waitFor([&] { return places->isBookmarked(notes) && placeAt(window, notes).x() >= 0; }),
+          "Ctrl+D bookmarks the folder, and the sidebar lists it");
+    save(window, out + QStringLiteral("/bookmarks.png"));
+    folder->go(home);
+    waitFor([&] { return folder->path() == home; });
+    QTest::mouseClick(window, Qt::LeftButton, {}, placeAt(window, notes));
+    check(waitFor([&] { return folder->path() == notes; }), "…and opens from there");
+    QTest::mouseClick(window, Qt::RightButton, {}, placeAt(window, notes));
+    QTest::qWait(300);
+    for (const auto key : { Qt::Key_Down, Qt::Key_Return }) // Remove from bookmarks
+        QTest::keyClick(window, key);
+    check(waitFor([&] { return !places->isBookmarked(notes) && placeAt(window, notes).x() < 0; }), "right-click, Remove takes it off");
 
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");
     return failures ? 1 : 0;

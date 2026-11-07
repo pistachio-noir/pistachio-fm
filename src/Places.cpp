@@ -3,11 +3,13 @@
 #include "Format.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QStorageInfo>
 
@@ -101,7 +103,105 @@ Places::Places(QObject *parent)
     // mounting is rare; reading the mount table every few seconds costs nothing
     m_poll.setInterval(4000);
     connect(&m_poll, &QTimer::timeout, this, &Places::refreshDevices);
+    // and so are bookmarks Nautilus adds or removes
+    connect(&m_poll, &QTimer::timeout, this, &Places::readBookmarks);
+    readBookmarks();
     m_poll.start();
+}
+
+QString Places::bookmarksFile()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + QStringLiteral("/gtk-3.0/bookmarks");
+}
+
+// "file:///home/me/My%20Projects Label": the folder, and the name to show (its own unless labelled)
+static QString bookmarkPath(const QByteArray &line, QString *name = nullptr)
+{
+    const qsizetype space = line.indexOf(' ');
+    const QUrl url = QUrl::fromEncoded(line.left(space < 0 ? line.size() : space));
+    if (!url.isLocalFile())
+        return {}; // sftp:// and the like: kept in the file, not shown
+    const QString path = QDir::cleanPath(url.toLocalFile());
+    if (name) {
+        const QString label = space < 0 ? QString() : QString::fromUtf8(line.mid(space + 1)).trimmed();
+        *name = !label.isEmpty() ? label : path == u'/' ? QStringLiteral("System") : QFileInfo(path).fileName();
+    }
+    return path;
+}
+
+static QList<QByteArray> bookmarkLines()
+{
+    QFile file(Places::bookmarksFile());
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QList<QByteArray> lines = file.readAll().split('\n');
+    lines.removeAll(QByteArray());
+    return lines;
+}
+
+void Places::readBookmarks()
+{
+    QVariantList bookmarks;
+    for (const QByteArray &line : bookmarkLines()) {
+        QString name;
+        const QString path = bookmarkPath(line, &name);
+        if (!path.isEmpty())
+            bookmarks.append(QVariantMap { { QStringLiteral("name"), name }, { QStringLiteral("path"), path },
+                                           { QStringLiteral("icon"), QStringLiteral("folder") } });
+    }
+    if (bookmarks == m_bookmarks)
+        return;
+    m_bookmarks = bookmarks;
+    emit bookmarksChanged();
+}
+
+bool Places::writeBookmarks(const QList<QByteArray> &lines)
+{
+    QDir().mkpath(QFileInfo(bookmarksFile()).path());
+    QSaveFile file(bookmarksFile());
+    if (!file.open(QIODevice::WriteOnly) || file.write(lines.join('\n') + '\n') < 0 || !file.commit()) {
+        emit failed(QStringLiteral("Couldn't save the bookmarks in ~/.config/gtk-3.0/bookmarks"));
+        return false;
+    }
+    readBookmarks();
+    return true;
+}
+
+bool Places::isBookmarked(const QString &path) const
+{
+    for (const QVariant &bookmark : m_bookmarks) {
+        if (bookmark.toMap().value(QStringLiteral("path")).toString() == QDir::cleanPath(path))
+            return true;
+    }
+    return false;
+}
+
+bool Places::addBookmark(const QString &path)
+{
+    if (!QFileInfo(path).isDir()) {
+        emit failed(QStringLiteral("Only folders can be bookmarked"));
+        return false;
+    }
+    if (isBookmarked(path))
+        return true;
+    return writeBookmarks(bookmarkLines() << QUrl::fromLocalFile(QDir::cleanPath(path)).toEncoded());
+}
+
+void Places::addBookmarks(const QList<QUrl> &urls)
+{
+    for (const QUrl &url : urls) {
+        if (url.isLocalFile())
+            addBookmark(url.toLocalFile());
+    }
+}
+
+void Places::removeBookmark(const QString &path)
+{
+    QList<QByteArray> lines = bookmarkLines();
+    const qsizetype before = lines.size();
+    lines.removeIf([&](const QByteArray &line) { return bookmarkPath(line) == QDir::cleanPath(path); });
+    if (lines.size() != before)
+        writeBookmarks(lines);
 }
 
 Places::~Places()
@@ -225,7 +325,7 @@ QVariantList Places::crumbs(const QString &path) const
 QString Places::placeFor(const QString &path) const
 {
     QString best;
-    for (const QVariantList *list : { &m_places, &m_devices }) {
+    for (const QVariantList *list : { &m_places, &m_bookmarks, &m_devices }) {
         for (const QVariant &candidate : *list) {
             const QString placePath = candidate.toMap().value(QStringLiteral("path")).toString();
             if (holds(placePath, path) && placePath.size() > best.size())

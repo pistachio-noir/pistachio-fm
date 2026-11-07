@@ -481,6 +481,49 @@ private slots:
         QVERIFY(QFile::exists(path + QStringLiteral("/b.zip")));
     }
 
+    void extract()
+    {
+        if (QStandardPaths::findExecutable(QStringLiteral("bsdtar")).isEmpty())
+            QSKIP("bsdtar isn't installed");
+        const QString path = dir(QStringLiteral("extracting"));
+        touch(path + QStringLiteral("/a.txt"), 100);
+        QProcess::execute(QStringLiteral("bsdtar"), { QStringLiteral("-czf"), path + QStringLiteral("/photos.tar.gz"),
+                                                      QStringLiteral("-C"), path, QStringLiteral("a.txt") });
+        // an archive that tries to write outside its folder
+        QProcess::execute(QStringLiteral("bsdtar"), { QStringLiteral("-cf"), path + QStringLiteral("/evil.tar"), QStringLiteral("-P"),
+                                                      QStringLiteral("-s"), QStringLiteral(",^,../escaped-,"), path + QStringLiteral("/a.txt") });
+        FileOps ops;
+        QSignalSpy finished(&ops, &FileOps::finished);
+        QSignalSpy failed(&ops, &FileOps::failed);
+
+        // into a folder named after it, without the .tar.gz; a second time beside it
+        ops.extract(path + QStringLiteral("/photos.tar.gz"), path);
+        QVERIFY(finished.wait(5000));
+        QCOMPARE(finished.last().at(1).toStringList(), QStringList { path + QStringLiteral("/photos") });
+        QCOMPARE(QFileInfo(path + QStringLiteral("/photos/a.txt")).size(), 100);
+        ops.extract(path + QStringLiteral("/photos.tar.gz"), path);
+        QVERIFY(finished.wait(5000));
+        QCOMPARE(finished.last().at(1).toStringList(), QStringList { path + QStringLiteral("/photos (2)") });
+        // undo: to the trash
+        ops.undo();
+        QTRY_VERIFY(!QFile::exists(path + QStringLiteral("/photos (2)")));
+        QVERIFY(QFile::exists(path + QStringLiteral("/photos/a.txt")));
+
+        // nothing lands outside the folder
+        ops.extract(path + QStringLiteral("/evil.tar"), path);
+        QTRY_VERIFY(finished.size() + failed.size() >= 4);
+        QVERIFY(QDir(path).entryList({ QStringLiteral("escaped-*") }).isEmpty());
+        QVERIFY(QDir(QFileInfo(path).path()).entryList({ QStringLiteral("escaped-*") }).isEmpty());
+
+        // not an archive: it says so, and leaves no empty folder behind
+        touch(path + QStringLiteral("/plain.zip"), 10);
+        failed.clear();
+        ops.extract(path + QStringLiteral("/plain.zip"), path);
+        QTRY_COMPARE(failed.size(), 1);
+        QVERIFY(failed.first().first().toString().startsWith(QStringLiteral("Couldn't extract")));
+        QVERIFY(!QFile::exists(path + QStringLiteral("/plain")));
+    }
+
     void clipboardFormats()
     {
         const QString path = dir(QStringLiteral("clip"));
@@ -865,6 +908,33 @@ private slots:
         QDir(to).removeRecursively();
     }
 
+    void stopPaste()
+    {
+        const QString from = dir(QStringLiteral("stopping"));
+        const QString to = dir(QStringLiteral("stopped"));
+        QDir().mkpath(from + QStringLiteral("/Many"));
+        for (int i = 0; i < 20000; ++i)
+            write(from + QStringLiteral("/Many/%1").arg(i), "x");
+        write(from + QStringLiteral("/small.txt"), "x");
+        FileOps ops;
+        QSignalSpy notices(&ops, &FileOps::notice);
+        ops.copy({ from + QStringLiteral("/Many") });
+        ops.paste(to);
+        ops.paste(to + QStringLiteral("/../stopped")); // a second, waiting its turn
+        ops.stop(); // long before 20,000 files are copied
+        QCOMPARE(notices.last().first().toString(), QStringLiteral("Stopped"));
+        QTRY_VERIFY_WITH_TIMEOUT(!ops.busy(), 20000);
+        // the half-copied folder is gone, and the waiting paste never ran
+        QCOMPARE(QDir(to).entryList(QDir::AllEntries | QDir::NoDotAndDotDot), QStringList());
+        // the next paste runs as usual
+        QSignalSpy finished(&ops, &FileOps::finished);
+        ops.copy({ from + QStringLiteral("/small.txt") });
+        ops.paste(to);
+        QVERIFY(finished.wait(5000));
+        QVERIFY(QFile::exists(to + QStringLiteral("/small.txt")));
+        QDir(from).removeRecursively();
+    }
+
     void progressLine()
     {
         Transfer::Progress progress;
@@ -973,7 +1043,7 @@ private slots:
 
         const QString file = dir(QStringLiteral("apps")) + QStringLiteral("/read me.md");
         write(file, "# hi\n");
-        Apps finder;
+        Apps finder(nullptr);
         const auto ids = [&] {
             QStringList list;
             for (const QVariant &app : finder.forFile(file).value(QStringLiteral("apps")).toList())
@@ -1023,11 +1093,66 @@ private slots:
         QFile::remove(log);
         QVERIFY(finder.open(QStringLiteral("term-app.desktop"), file, false));
         QTRY_COMPARE(contents(log), "-e\ntool\n" + file.toUtf8() + '\n');
+
+        // Open in terminal: the terminal, started in the folder
+        const QString pwd = m_home + QStringLiteral("/pwd.sh");
+        write(pwd, "#!/bin/sh\npwd > " + log.toUtf8() + "\n");
+        QFile::setPermissions(pwd, QFile::permissions(pwd) | QFile::ExeOwner);
+        qputenv("TERMINAL", pwd.toLocal8Bit());
+        QFile::remove(log);
+        QVERIFY(finder.openTerminal(m_home));
+        QTRY_COMPARE(contents(log), m_home.toUtf8() + '\n');
         qputenv("TERMINAL", terminal);
 
         QSignalSpy failed(&finder, &Apps::failed);
         QVERIFY(!finder.open(QStringLiteral("no-such.desktop"), file, true));
         QCOMPARE(failed.size(), 1);
+    }
+
+    void bookmarks()
+    {
+        const QString projects = m_home + QStringLiteral("/My Projects");
+        const QString music = m_home + QStringLiteral("/Music");
+        QDir().mkpath(projects);
+        QDir().mkpath(music);
+        touch(m_home + QStringLiteral("/notes.txt"), 10);
+        QDir().mkpath(QFileInfo(Places::bookmarksFile()).path());
+        // as Nautilus leaves it: a labelled one, one on a server, and an encoded name
+        write(Places::bookmarksFile(), "file://" + music.toUtf8() + " Tunes\nsftp://server/srv\nfile://"
+                                           + QUrl::fromLocalFile(projects).toEncoded().mid(7) + '\n');
+        Places places;
+        const auto shown = [&] {
+            QStringList list;
+            for (const QVariant &bookmark : places.bookmarks())
+                list << bookmark.toMap().value(QStringLiteral("name")).toString() + u'=' + bookmark.toMap().value(QStringLiteral("path")).toString();
+            return list;
+        };
+        QCOMPARE(shown(), (QStringList { QStringLiteral("Tunes=") + music, QStringLiteral("My Projects=") + projects }));
+        QVERIFY(places.isBookmarked(projects + u'/'));
+        QCOMPARE(places.placeFor(projects + QStringLiteral("/pfm")), projects); // lit over Home
+
+        // added at the end, the others kept as they were; twice is once
+        const QString docs = m_home + QStringLiteral("/Documents");
+        QDir().mkpath(docs);
+        QSignalSpy changed(&places, &Places::bookmarksChanged);
+        QVERIFY(places.addBookmark(docs));
+        QVERIFY(places.addBookmark(docs));
+        QCOMPARE(changed.size(), 1);
+        QCOMPARE(contents(Places::bookmarksFile()), "file://" + music.toUtf8() + " Tunes\nsftp://server/srv\n"
+                     + QUrl::fromLocalFile(projects).toEncoded() + '\n' + QUrl::fromLocalFile(docs).toEncoded() + '\n');
+        // only folders
+        QSignalSpy failed(&places, &Places::failed);
+        QVERIFY(!places.addBookmark(m_home + QStringLiteral("/notes.txt")));
+        QCOMPARE(failed.size(), 1);
+        // removed: only its line goes
+        places.removeBookmark(music);
+        QCOMPARE(contents(Places::bookmarksFile()), "sftp://server/srv\n" + QUrl::fromLocalFile(projects).toEncoded() + '\n'
+                                                       + QUrl::fromLocalFile(docs).toEncoded() + '\n');
+        QCOMPARE(shown().size(), 2);
+        // dropped on the sidebar
+        places.addBookmarks({ QUrl::fromLocalFile(music) });
+        QVERIFY(places.isBookmarked(music));
+        QFile::remove(Places::bookmarksFile());
     }
 
     void crumbsAndPlaces()

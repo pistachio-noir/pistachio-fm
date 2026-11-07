@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(pistachio-fm VERSION 0.1.0 LANGUAGES CXX)
+project(pistachio-fm VERSION 1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,7 +41,13 @@ target_include_directories(pfm PUBLIC src)
 target_link_libraries(pfm PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick)
 
 qt_add_executable(pistachio-fm src/main.cpp)
-target_compile_definitions(pistachio-fm PRIVATE PFM_VERSION="${PROJECT_VERSION}")
+# the version, v1 · <short hash>: HEAD is read from git on every build, so it follows the repo
+add_custom_target(pfm-version
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/version.h
+            -DMAJOR=${PROJECT_VERSION_MAJOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/version.h)
+add_dependencies(pistachio-fm pfm-version)
+target_include_directories(pistachio-fm PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(pistachio-fm PRIVATE pfm pfmplugin)
 
 install(TARGETS pistachio-fm RUNTIME DESTINATION bin)

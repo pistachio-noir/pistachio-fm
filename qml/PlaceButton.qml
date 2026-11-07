@@ -13,6 +13,7 @@ Rectangle {
 
     signal clicked
     signal eject
+    signal menuRequested(point at) // a right-click, in window coordinates
 
     implicitHeight: 44
     radius: 22
@@ -64,7 +65,8 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.clicked()
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: event => event.button === Qt.RightButton ? root.menuRequested(mapToItem(null, event.x, event.y)) : root.clicked()
     }
 
     Icon {

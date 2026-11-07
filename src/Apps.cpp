@@ -6,7 +6,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QIcon>
+#include <QImageReader>
 #include <QMimeDatabase>
+#include <QPainter>
+#include <QPainterPath>
 #include <QProcess>
 #include <QQmlEngine>
 #include <QQuickImageProvider>
@@ -219,16 +222,59 @@ public:
     }
 };
 
+// image://thumbnail/<percent-encoded path>: a picture decoded at the size asked for (JPEGs are decoded small to
+// begin with), cut to the round badge here, so no shader is needed
+class ThumbnailProvider : public QQuickImageProvider
+{
+public:
+    ThumbnailProvider()
+        : QQuickImageProvider(QQuickImageProvider::Image)
+    {
+    }
+
+    QImage requestImage(const QString &id, QSize *size, const QSize &requested) override
+    {
+        const int side = requested.width() > 0 ? requested.width() : 72;
+        QImageReader reader(QUrl::fromPercentEncoding(id.toUtf8()));
+        reader.setAutoTransform(true);
+        const QSize full = reader.size();
+        if (full.isValid())
+            reader.setScaledSize(full.scaled(side, side, Qt::KeepAspectRatioByExpanding));
+        const QImage picture = reader.read();
+        if (picture.isNull())
+            return {};
+        QImage round(side, side, QImage::Format_ARGB32_Premultiplied);
+        round.fill(Qt::transparent);
+        QPainter painter(&round);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QPainterPath circle;
+        circle.addEllipse(0, 0, side, side);
+        painter.setClipPath(circle);
+        const QImage filled = picture.size().width() < side || picture.size().height() < side
+            ? picture.scaled(side, side, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation) : picture;
+        painter.drawImage((side - filled.width()) / 2, (side - filled.height()) / 2, filled);
+        painter.end();
+        if (size)
+            *size = round.size();
+        return round;
+    }
+};
+
 } // namespace
 
-// starts `app` on `path`, in its folder; a terminal app in $TERMINAL (or kitty), as the shell's launcher does
+// the terminal, as the shell's launcher picks it
+static QString terminal()
+{
+    const QString terminal = qEnvironmentVariable("TERMINAL");
+    return terminal.isEmpty() ? QStringLiteral("kitty") : terminal;
+}
+
+// starts `app` on `path`, in its folder; a terminal app in the terminal
 static bool launch(const Entry &app, const QString &path)
 {
     QStringList program = Apps::command(app.exec, path);
-    if (app.terminal) {
-        const QString terminal = qEnvironmentVariable("TERMINAL");
-        program = QStringList { terminal.isEmpty() ? QStringLiteral("kitty") : terminal, QStringLiteral("-e") } + program;
-    }
+    if (app.terminal)
+        program = QStringList { terminal(), QStringLiteral("-e") } + program;
     return !program.isEmpty() && QProcess::startDetached(program.first(), program.mid(1), QFileInfo(path).path());
 }
 
@@ -240,7 +286,8 @@ Apps::Apps(QObject *parent)
 Apps *Apps::create(QQmlEngine *engine, QJSEngine *)
 {
     engine->addImageProvider(QStringLiteral("appicon"), new IconProvider);
-    return new Apps;
+    engine->addImageProvider(QStringLiteral("thumbnail"), new ThumbnailProvider);
+    return new Apps(nullptr);
 }
 
 QVariantMap Apps::forFile(const QString &path) const
@@ -381,4 +428,12 @@ QStringList Apps::command(const QString &exec, const QString &path)
     if (!placed && !program.isEmpty())
         program.append(path); // an app that takes no file still gets the one picked for it
     return program;
+}
+
+bool Apps::openTerminal(const QString &dir)
+{
+    if (QProcess::startDetached(terminal(), {}, dir))
+        return true;
+    emit failed(QStringLiteral("Couldn't start %1").arg(terminal()));
+    return false;
 }

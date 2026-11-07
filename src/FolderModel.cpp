@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QImageReader>
 #include <QMimeDatabase>
 #include <QPointer>
 #include <QStorageInfo>
@@ -42,6 +43,7 @@ QList<FileEntry> listFolder(const QString &path, QString *error)
     }
 
     QMimeDatabase mimes;
+    static const QList<QByteArray> pictureTypes = QImageReader::supportedMimeTypes(); // RAW photos aren't
     const QFileInfoList infos = QDir(path).entryInfoList(
         QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System, QDir::NoSort);
     entries.reserve(infos.size());
@@ -57,7 +59,9 @@ QList<FileEntry> listFolder(const QString &path, QString *error)
         } else {
             entry.size = info.size();
             // by name only: reading every file's first bytes would make big folders slow
-            entry.kind = Format::kind(mimes.mimeTypeForFile(info, QMimeDatabase::MatchExtension));
+            const QMimeType mime = mimes.mimeTypeForFile(info, QMimeDatabase::MatchExtension);
+            entry.kind = Format::kind(mime);
+            entry.picture = entry.kind == QLatin1String("image") && pictureTypes.contains(mime.name().toLatin1());
             entry.suffix = info.suffix().toLower();
         }
         entries.append(entry);
@@ -153,6 +157,8 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
         return m_selected.contains(entry.path);
     case HiddenRole:
         return entry.hidden;
+    case PictureRole:
+        return entry.picture;
     }
     return {};
 }
@@ -163,6 +169,7 @@ QHash<int, QByteArray> FolderModel::roleNames() const
         { NameRole, "name" },
         { PathRole, "path" },
         { KindRole, "kind" },
+        { PictureRole, "picture" },
         { IsDirRole, "isDir" },
         { SizeRole, "size" },
         { ModifiedRole, "modified" },

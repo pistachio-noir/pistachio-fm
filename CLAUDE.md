@@ -34,6 +34,13 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   the side lights in overlay2 as a folder under a file drag, and a copy of the tab's chip (bg, overlay2 border) follows
   the pointer (owner's choices 2 Nov, no board). The drag is a mouse
   drag inside the window (TabBar's dragged/dropped), not a platform drag.
+- From Nautilus (owner's picks 7 Nov, no boards: they reuse what's there): pictures show in the round kind badge
+  (`image://thumbnail/`, cut round in C++; no on-disk cache); Extract here into a new folder named after the
+  archive (bsdtar without -P, so nothing lands outside it; undo trashes the folder); Open in terminal on empty
+  space; a Stop chip while a paste shows progress; Bookmarks under Places from `~/.config/gtk-3.0/bookmarks`
+  (Nautilus' file, re-read on the 4 s poll; only that line changes); a box drag on empty space selects.
+- The version (owner's request 7 Nov, no board): `v1 · <HEAD's short hash>` in subtext at the status bar's right corner,
+  right of the sort chip; `cmake/version.cmake` reads the hash on every build into `build/version.h`.
 - The keys card (toolbar's keyboard button, F1, ?; owner's request 1 Nov, no board) lists the keys from data in
   `KeysDialog.qml`, chips as the shell launcher's cheat sheet: keep it in step with Main's Shortcuts and README.
 - Window corners, border and shadow are Hyprland's. Never edit the Hyprland config.
@@ -88,6 +95,10 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   "undefined reference to vtable"); write those strings with ordinary escapes.
 - Offscreen Qt has no icon theme, so app icons only show on the real desktop (hicolor; Papirus isn't seen, no
   platform theme); the card falls back to the app's first letter.
+- QML builds a default-constructible singleton with its constructor and never calls its `create()`: `Apps` takes
+  a parent with no default, or its image providers (app icons, thumbnails) are never added.
+- Offscreen, shader effects (`MultiEffect`, `RectangularShadow`) draw nothing, so the thumbnails are cut round in
+  C++ (and shadows never show in pfm-shots' PNGs).
 - Don't open files with `QDesktopServices::openUrl`: Qt 6.12 sends it through the desktop portal (OpenURI), whose
   GTK "Open With…" chooser keeps asking, with its own memory per app, whatever `mimeapps.list` says. FM starts
   the default itself (`Apps::openFiles`, the same launcher as Open with).
