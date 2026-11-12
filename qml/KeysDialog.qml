@@ -11,6 +11,7 @@ Controls.Popup {
     readonly property var groups: [
         { title: "Moving around", keys: [
             [["Enter"], "Open"],
+            [["Space"], "Preview file; again to close"],
             [["↑", "↓", "←", "→"], "Move; Shift extends"],
             [["Backspace"], "Up a folder"],
             [["Alt", "←"], "Back"],
@@ -35,6 +36,7 @@ Controls.Popup {
             [["Ctrl", "D"], "Bookmark this folder"],
         ] },
         { title: "View and tabs", keys: [
+            [["Ctrl", ","], "Settings"],
             [["Ctrl", "A"], "Select all"],
             [["Ctrl", "H"], "Hidden files"],
             [["Ctrl", "1"], "Grid"],

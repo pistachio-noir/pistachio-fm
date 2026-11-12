@@ -41,6 +41,7 @@ class FolderModel : public QAbstractListModel
     Q_PROPERTY(QString path READ path NOTIFY pathChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
+    Q_PROPERTY(bool recursive READ recursive WRITE setRecursive NOTIFY recursiveChanged)
     Q_PROPERTY(SortKey sortKey READ sortKey WRITE setSortKey NOTIFY sortKeyChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(int totalCount READ totalCount NOTIFY countChanged) // before the search filter
@@ -93,6 +94,8 @@ public:
     void setShowHidden(bool show);
     QString filter() const { return m_filter; }
     void setFilter(const QString &filter);
+    bool recursive() const { return m_recursive; }
+    void setRecursive(bool recursive);
     SortKey sortKey() const { return m_sortKey; }
     void setSortKey(SortKey key);
     int count() const { return int(m_rows.size()); }
@@ -129,6 +132,7 @@ signals:
     void pathChanged();
     void showHiddenChanged();
     void filterChanged();
+    void recursiveChanged();
     void sortKeyChanged();
     void countChanged();
     void loadingChanged();
@@ -172,6 +176,7 @@ private:
     QString m_error;
     SortKey m_sortKey = ByName;
     bool m_showHidden = false;
+    bool m_recursive = false;
     bool m_loading = false;
     int m_total = 0;
     qint64 m_freeBytes = 0;

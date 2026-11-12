@@ -28,6 +28,7 @@ public:
     // apps for the type itself, then for what it's a kind of (text editors for Markdown), each by name.
     // `icon` is "" where the theme has none.
     Q_INVOKABLE QVariantMap forFile(const QString &path) const;
+    Q_INVOKABLE QVariantMap forMime(const QString &type) const; // app choices without a sample file
     Q_INVOKABLE QVariantList all() const; // every app a launcher shows, by name
     Q_INVOKABLE QString defaultName(const QString &path) const; // "Loupe", or "" for none
     // starts app `id` on `path` (a terminal app in $TERMINAL, or kitty); with `remember`, it becomes the

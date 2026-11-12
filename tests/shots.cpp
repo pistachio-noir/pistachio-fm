@@ -9,6 +9,8 @@
 #include "FileOps.h"
 #include "FolderModel.h"
 #include "Places.h"
+#include "MimeSettings.h"
+#include "PreviewPdf.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -266,6 +268,39 @@ int main(int argc, char *argv[])
     check(folder->filter() == QLatin1String("pdf") && folder->count() == 2, "typing over the files searches");
     QTest::keyClick(window, Qt::Key_Escape);
     check(folder->filter().isEmpty() && folder->count() == 11, "Escape clears the search");
+
+    // The same search field can traverse subfolders; result actions must use the actual parent.
+    const QString searchFile = docs + QStringLiteral("/Notes/search-note.md");
+    makeFile(searchFile, 42, QDateTime::currentDateTime());
+    QTest::keyClick(window, Qt::Key_F, Qt::ControlModifier);
+    for (const char key : QByteArray("search-note"))
+        QTest::keyClick(window, key);
+    check(folder->count() == 0, "the normal filter does not search subfolders");
+    auto *scope = window->findChild<QQuickItem *>(QStringLiteral("searchScope"));
+    if (check(scope != nullptr, "search has a scope toggle")) {
+        QTest::mouseClick(window, Qt::LeftButton, {},
+                          scope->mapToScene(QPointF(22, 22)).toPoint());
+        check(waitFor([&] { return !folder->loading() && folder->rowOf(searchFile) >= 0; }),
+              "the search icon enables recursive filename search");
+        save(window, out + QStringLiteral("/search-grid.png"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTest::keyClick(window, Qt::Key_F2);
+        QTest::qWait(250);
+        QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+        for (const char key : QByteArray("todo.md"))
+            QTest::keyClick(window, key);
+        QTest::keyClick(window, Qt::Key_Return);
+        check(waitFor([&] { return QFile::exists(docs + QStringLiteral("/Notes/todo.md")); }),
+              "renaming a nested result checks its own folder, not the search root");
+        QTest::qWait(300);
+        QFile::remove(docs + QStringLiteral("/Notes/todo.md"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        check(waitFor([&] { return !folder->loading() && folder->count() == 11; }),
+              "Escape leaves recursive results and restores the root listing");
+        folder->setRecursive(false);
+        waitFor([&] { return !folder->loading(); });
+    }
+    QFile::remove(searchFile);
 
     // 2. the list with the menu, as on list-context-menu.html
     folder->selectPaths({ docs + QStringLiteral("/thesis-draft.pdf") });
@@ -570,7 +605,9 @@ int main(int argc, char *argv[])
 
     // 13. the toolbar's keyboard button lists every key
     QTest::qWait(300);
-    QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(960 - 20 - 22, 38)); // the toolbar's last button
+    auto *keysButton = window->findChild<QQuickItem *>(QStringLiteral("keysButton"));
+    if (check(keysButton != nullptr, "the toolbar has a keyboard shortcuts button"))
+        QTest::mouseClick(window, Qt::LeftButton, {}, keysButton->mapToScene(QPointF(22, 22)).toPoint());
     QObject *keysCard = window->findChild<QObject *>(QStringLiteral("keys"));
     check(keysCard && waitFor([&] { return keysCard->property("opened").toBool(); }), "the keyboard button lists the keys");
     save(window, out + QStringLiteral("/keys.png"));
@@ -657,6 +694,245 @@ int main(int argc, char *argv[])
     for (const auto key : { Qt::Key_Down, Qt::Key_Return }) // Remove from bookmarks
         QTest::keyClick(window, key);
     check(waitFor([&] { return !places->isBookmarked(notes) && placeAt(window, notes).x() < 0; }), "right-click, Remove takes it off");
+
+    // Space previews the selected file rather than appending a space to the search.
+    QTest::qWait(250); // the preceding bookmark menu must finish releasing the shortcuts
+    folder->go(docs);
+    waitFor([&] { return !folder->loading(); });
+    const QString previewPath = docs + QStringLiteral("/preview.txt");
+    {
+        QFile file(previewPath);
+        if (file.open(QIODevice::WriteOnly))
+            file.write("A plain text preview.\n<em>This stays literal.</em>\n");
+        QFile unsupported(docs + QStringLiteral("/preview.docx"));
+        if (unsupported.open(QIODevice::WriteOnly))
+            unsupported.write("%PDF-1.4\n");
+    }
+    folder->reload();
+    waitFor([&] { return !folder->loading() && folder->rowOf(previewPath) >= 0; });
+    folder->selectPaths({ previewPath });
+    QMetaObject::invokeMethod(window, "focusFiles");
+    QTest::keyClick(window, Qt::Key_Space);
+    QObject *preview = window->findChild<QObject *>(QStringLiteral("preview"));
+    check(preview && waitFor([&] { return preview->property("opened").toBool(); }),
+          "Space opens a preview of the selected file");
+    check(folder->filter().isEmpty(), "Space over files does not start a search");
+    if (preview) {
+        check(waitFor([&] {
+            return preview->property("content").toMap().value(QStringLiteral("text")).toString()
+                == QLatin1String("A plain text preview.\n<em>This stays literal.</em>\n");
+        }), "the preview reads the selected file's actual text");
+        save(window, out + QStringLiteral("/preview-text.png"));
+        QTest::keyClick(window, Qt::Key_Space);
+        check(waitFor([&] { return !preview->property("visible").toBool(); }), "Space closes the preview");
+        QTest::qWait(250);
+        QTest::keyClick(window, Qt::Key_Space);
+        waitFor([&] { return preview->property("opened").toBool(); });
+        QTest::keyClick(window, Qt::Key_Escape);
+        check(waitFor([&] { return !preview->property("visible").toBool(); }), "Escape closes the preview");
+        QTest::qWait(250);
+        QTest::keyClick(window, Qt::Key_F, Qt::ControlModifier);
+        for (const char key : QByteArray("two words"))
+            QTest::keyClick(window, key);
+        check(folder->filter() == QLatin1String("two words") && !preview->property("visible").toBool(),
+              "Space in the search field remains normal text input");
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTest::keyClick(window, Qt::Key_L, Qt::ControlModifier);
+        QTest::keyClick(window, Qt::Key_Space);
+        check(!preview->property("visible").toBool(), "Space in the path field does not open preview");
+        QTest::keyClick(window, Qt::Key_Escape);
+        folder->clearSelection();
+        QMetaObject::invokeMethod(window, "focusFiles");
+        QTest::keyClick(window, Qt::Key_Space);
+        check(!preview->property("visible").toBool() && folder->filter().isEmpty(),
+              "Space with no selection leaves browsing unchanged");
+        folder->selectPaths({ previewPath, docs + QStringLiteral("/todo.md") });
+        QTest::keyClick(window, Qt::Key_Space);
+        check(!preview->property("visible").toBool(), "Space with multiple files does not pick an arbitrary preview");
+
+        folder->go(pictures);
+        waitFor([&] { return !folder->loading(); });
+        folder->selectPaths({ pictures + QStringLiteral("/sunset #1.png") });
+        QMetaObject::invokeMethod(window, "focusFiles");
+        QTest::keyClick(window, Qt::Key_Space);
+        auto *image = window->findChild<QQuickItem *>(QStringLiteral("previewImage"));
+        check(image && waitFor([&] {
+            return preview->property("opened").toBool() && image->property("status").toInt() == 1;
+        }), "Space previews an image whose filename needs URL escaping");
+        save(window, out + QStringLiteral("/preview-image.png"));
+        auto *zoomIn = window->findChild<QQuickItem *>(QStringLiteral("previewZoomIn"));
+        auto *zoomOut = window->findChild<QQuickItem *>(QStringLiteral("previewZoomOut"));
+        auto *zoomFit = window->findChild<QQuickItem *>(QStringLiteral("previewZoomFit"));
+        auto *imageView = window->findChild<QQuickItem *>(QStringLiteral("previewImageView"));
+        if (check(zoomIn && zoomOut && zoomFit && imageView, "image preview has zoom controls")) {
+            const qreal before = image->property("paintedWidth").toReal();
+            QTest::mouseClick(window, Qt::LeftButton, {}, zoomIn->mapToScene(QPointF(22, 22)).toPoint());
+            check(waitFor([&] {
+                return image->property("status").toInt() == 1 && image->property("paintedWidth").toReal() > before
+                    && imageView->property("contentHeight").toReal() > imageView->height();
+            }), "zoom enlarges the image in a scrollable viewport");
+            const qreal oldY = imageView->property("contentY").toReal();
+            const QPoint middle = imageView->mapToScene(QPointF(imageView->width() / 2, imageView->height() / 2)).toPoint();
+            QTest::mousePress(window, Qt::LeftButton, {}, middle);
+            QTest::mouseMove(window, middle - QPoint(0, 20));
+            QTest::mouseMove(window, middle - QPoint(0, 50));
+            QTest::mouseRelease(window, Qt::LeftButton, {}, middle - QPoint(0, 50));
+            check(waitFor([&] { return imageView->property("contentY").toReal() > oldY; }),
+                  "dragging pans the zoomed image");
+            QTest::mouseClick(window, Qt::LeftButton, {}, zoomFit->mapToScene(QPointF(zoomFit->width() / 2, 22)).toPoint());
+            check(waitFor([&] {
+                return preview->property("zoom").toReal() == 1 && !zoomOut->isEnabled()
+                    && imageView->property("contentX").toReal() == 0;
+            }), "Fit restores the image and resets panning");
+            QWheelEvent wheel(middle, window->mapToGlobal(middle), QPoint(), QPoint(0, 120),
+                              Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(window, &wheel);
+            check(waitFor([&] { return preview->property("zoom").toReal() > 1; }), "Ctrl+wheel zooms the image");
+            QTest::mouseClick(window, Qt::LeftButton, {}, zoomFit->mapToScene(QPointF(zoomFit->width() / 2, 22)).toPoint());
+            zoomFit->forceActiveFocus();
+            QTest::keyClick(window, Qt::Key_Space);
+            check(waitFor([&] { return !preview->property("visible").toBool(); }),
+                  "Space closes preview even when Fit has keyboard focus");
+        }
+        QTest::keyClick(window, Qt::Key_Escape);
+        waitFor([&] { return !preview->property("visible").toBool(); });
+        QTest::qWait(250);
+        folder->go(docs);
+        waitFor([&] { return !folder->loading(); });
+        folder->selectPaths({ docs + QStringLiteral("/preview.docx") });
+        QMetaObject::invokeMethod(window, "focusFiles");
+        QTest::keyClick(window, Qt::Key_Space);
+        check(waitFor([&] {
+            return preview->property("content").toMap().value(QStringLiteral("kind")).toString() == QLatin1String("unsupported");
+        }), "unsupported files show an explicit preview fallback");
+        QTest::keyClick(window, Qt::Key_Escape);
+        waitFor([&] { return !preview->property("visible").toBool(); });
+        QTest::qWait(250);
+
+        const QString pdfPath = docs + QStringLiteral("/preview #1.pdf");
+        check(makePreviewPdf(pdfPath), "created a real two-page PDF fixture");
+        folder->reload();
+        waitFor([&] { return !folder->loading() && folder->rowOf(pdfPath) >= 0; });
+        folder->selectPaths({ pdfPath });
+        QMetaObject::invokeMethod(window, "focusFiles");
+        QTest::keyClick(window, Qt::Key_Space);
+        check(waitFor([&] {
+            const auto content = preview->property("content").toMap();
+            return content.value(QStringLiteral("kind")).toString() == QLatin1String("pdf")
+                && content.value(QStringLiteral("pages")).toInt() == 2
+                && image && image->property("status").toInt() == 1;
+        }), "Space previews the first PDF page and reports its page count");
+        save(window, out + QStringLiteral("/preview-pdf-1.png"));
+        if (zoomIn && zoomOut && zoomFit) {
+            check(preview->property("zoom").toReal() == 1, "a newly opened PDF starts fitted");
+            QTest::keyClick(window, Qt::Key_Plus);
+            check(waitFor([&] { return preview->property("zoom").toReal() > 1; }), "Plus zooms the PDF");
+            save(window, out + QStringLiteral("/preview-pdf-zoom.png"));
+            check(QMetaObject::invokeMethod(preview, "setZoom", Q_ARG(double, 10.0))
+                      && preview->property("zoom").toReal() == 4 && !zoomIn->isEnabled(),
+                  "zoom is bounded at four times fit");
+            QTest::keyClick(window, Qt::Key_Minus);
+            check(preview->property("zoom").toReal() < 4, "Minus zooms the PDF out");
+            QTest::keyClick(window, Qt::Key_0);
+            check(waitFor([&] { return preview->property("zoom").toReal() == 1; }), "Zero fits the PDF again");
+        }
+        auto *next = window->findChild<QQuickItem *>(QStringLiteral("previewNext"));
+        auto *previous = window->findChild<QQuickItem *>(QStringLiteral("previewPrevious"));
+        if (check(next && previous && next->isEnabled() && !previous->isEnabled(),
+                  "PDF page buttons respect the first-page boundary")) {
+            QTest::mouseClick(window, Qt::LeftButton, {}, next->mapToScene(QPointF(22, 22)).toPoint());
+            check(waitFor([&] {
+                return preview->property("content").toMap().value(QStringLiteral("page")).toInt() == 2
+                    && image->property("status").toInt() == 1 && !next->isEnabled();
+            }), "Next renders the second PDF page and disables at the last page");
+            save(window, out + QStringLiteral("/preview-pdf-2.png"));
+            QTest::mouseClick(window, Qt::LeftButton, {}, previous->mapToScene(QPointF(22, 22)).toPoint());
+            check(waitFor([&] {
+                return preview->property("content").toMap().value(QStringLiteral("page")).toInt() == 1
+                    && image->property("status").toInt() == 1 && !previous->isEnabled();
+            }), "Previous renders the first PDF page again");
+            QTest::keyClick(window, Qt::Key_Right);
+            check(waitFor([&] {
+                return preview->property("content").toMap().value(QStringLiteral("page")).toInt() == 2
+                    && image->property("status").toInt() == 1 && !next->isEnabled();
+            }), "Right changes the PDF page from the keyboard");
+            QTest::keyClick(window, Qt::Key_Left);
+            check(waitFor([&] {
+                return preview->property("content").toMap().value(QStringLiteral("page")).toInt() == 1
+                    && image->property("status").toInt() == 1 && !previous->isEnabled();
+            }), "Left changes the PDF page back");
+        }
+        QTest::keyClick(window, Qt::Key_Space);
+        check(waitFor([&] { return !preview->property("visible").toBool(); }), "Space closes PDF preview");
+    }
+
+    // A stand-in xdg-mime changes only scratch data and never launches a real app.
+    const QString mimeTools = home + QStringLiteral("/mime-tools");
+    QDir().mkpath(mimeTools);
+    const QString defaultState = mimeTools + QStringLiteral("/default");
+    const QString mimeHelper = mimeTools + QStringLiteral("/xdg-mime");
+    {
+        QFile state(defaultState);
+        if (state.open(QIODevice::WriteOnly))
+            state.write("pfm-fake.desktop\n");
+        QFile helper(mimeHelper);
+        if (helper.open(QIODevice::WriteOnly))
+            helper.write("#!/bin/sh\nif [ \"$1\" = query ]; then /bin/cat '" + defaultState.toUtf8()
+                         + "'; elif [ \"$1\" = default ]; then printf '%s\\n' \"$2\" > '" + defaultState.toUtf8() + "'; fi\n");
+        helper.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        QFile second(home + QStringLiteral("/.local/share/applications/pfm-second.desktop"));
+        if (second.open(QIODevice::WriteOnly))
+            second.write("[Desktop Entry]\nType=Application\nName=Second Editor\nExec=/bin/true %f\nMimeType=text/plain;\n");
+    }
+    qputenv("PATH", QFile::encodeName(mimeTools) + ':' + qgetenv("PATH"));
+    QTest::qWait(250);
+    QTest::keyClick(window, Qt::Key_Comma, Qt::ControlModifier);
+    QObject *settings = window->findChild<QObject *>(QStringLiteral("settings"));
+    check(settings && waitFor([&] { return settings->property("opened").toBool(); }),
+          "Ctrl+comma opens Settings with default applications");
+    if (settings) {
+        auto *manager = settings->property("manager").value<MimeSettings *>();
+        check(manager && waitFor([&] {
+            return !manager->busy() && manager->info().value(QStringLiteral("currentName")).toString() == QLatin1String("Fake Editor");
+        }), "Settings shows the effective xdg-mime default");
+        settings->setProperty("chosen", QStringLiteral("pfm-second.desktop"));
+        QFile state(defaultState);
+        check(state.open(QIODevice::ReadOnly) && state.readAll() == QByteArray("pfm-fake.desktop\n"),
+              "choosing an application does not save it yet");
+        state.close();
+        auto *apply = window->findChild<QQuickItem *>(QStringLiteral("settingsApply"));
+        if (apply && manager) {
+            QTest::mouseClick(window, Qt::LeftButton, {}, apply->mapToScene(QPointF(apply->width() / 2, 22)).toPoint());
+            check(waitFor([&] {
+                return !manager->busy() && manager->error().isEmpty()
+                    && manager->info().value(QStringLiteral("currentId")).toString() == QLatin1String("pfm-second.desktop");
+            }), "Apply updates and verifies the desktop default without launching the app");
+        }
+        save(window, out + QStringLiteral("/settings-defaults.png"));
+        auto *typeList = window->findChild<QQuickItem *>(QStringLiteral("settingsTypes"));
+        if (typeList) {
+            typeList->forceActiveFocus();
+            QTest::keyClick(window, Qt::Key_Down);
+            QTest::keyClick(window, Qt::Key_Return);
+            check(manager && waitFor([&] {
+                return !manager->busy() && manager->info().value(QStringLiteral("mime")).toString() == QLatin1String("text/markdown");
+            }), "type-list arrows and Enter inspect the keyboard choice");
+        }
+        auto *searchField = window->findChild<QQuickItem *>(QStringLiteral("settingsSearch"));
+        if (searchField) {
+            searchField->forceActiveFocus();
+            for (const char key : QByteArray("application/pdf"))
+                QTest::keyClick(window, key);
+        }
+        check(settings->property("query").toString() == QLatin1String("application/pdf"), "Settings searches MIME types");
+        QTest::keyClick(window, Qt::Key_Return);
+        check(manager && waitFor([&] {
+            return !manager->busy() && manager->info().value(QStringLiteral("mime")).toString() == QLatin1String("application/pdf");
+        }), "Enter inspects the matching MIME type");
+        save(window, out + QStringLiteral("/settings-search.png"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        check(waitFor([&] { return !settings->property("visible").toBool(); }), "Escape closes Settings");
+    }
 
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");
     return failures ? 1 : 0;

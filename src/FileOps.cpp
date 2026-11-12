@@ -15,6 +15,7 @@
 #include <QMimeData>
 #include <QPointer>
 #include <QProcess>
+#include <QSet>
 #include <QStandardPaths>
 #include <QThreadPool>
 #include <QUrl>
@@ -42,6 +43,37 @@ QString parentOf(const QString &path)
 QString nameOf(const QString &path)
 {
     return path.mid(path.lastIndexOf(u'/') + 1);
+}
+
+// A directory operation already includes its descendants; links only include the link itself.
+QStringList topLevelPaths(const QStringList &paths)
+{
+    QSet<QString> folders;
+    for (const QString &path : paths) {
+        const QFileInfo info(path);
+        if (info.isDir() && !info.isSymLink())
+            folders.insert(QDir::cleanPath(path));
+    }
+    QStringList result;
+    QSet<QString> seen;
+    for (const QString &path : paths) {
+        const QString clean = QDir::cleanPath(path);
+        if (seen.contains(clean))
+            continue;
+        seen.insert(clean);
+        QString parent = clean;
+        bool covered = false;
+        while (parent != QLatin1String("/")) {
+            parent = parentOf(parent);
+            if (folders.contains(parent)) {
+                covered = true;
+                break;
+            }
+        }
+        if (!covered)
+            result.append(clean);
+    }
+    return result;
 }
 
 // a rename that won't replace anything; plain rename(2) where the drive can't promise that
@@ -198,7 +230,7 @@ bool FileOps::restore(const QStringList &trashedPaths)
 QStringList FileOps::trashAll(const QStringList &paths, QList<std::pair<QString, QString>> *trashed)
 {
     QStringList failures;
-    for (const QString &path : paths) {
+    for (const QString &path : topLevelPaths(paths)) {
         QString inTrash;
         if (!QFile::moveToTrash(path, &inTrash))
             failures.append(path);
@@ -241,7 +273,7 @@ void FileOps::deleteForever(const QStringList &paths)
     const QPointer<FileOps> self(this);
     QThreadPool::globalInstance()->start([self, paths] {
         QStringList failures;
-        for (const QString &path : paths) {
+        for (const QString &path : topLevelPaths(paths)) {
             if (!Transfer::removeAll(path)) {
                 failures.append(path);
                 continue;
@@ -339,7 +371,7 @@ void FileOps::drop(const QList<QUrl> &urls, const QString &dir)
 void FileOps::put(const QStringList &paths, const QString &dir, bool move)
 {
     QList<Transfer::Item> items;
-    for (const QString &path : paths)
+    for (const QString &path : topLevelPaths(paths))
         items.append({ path, dir, nameOf(path) });
     transfer(items, move, [this, move](const Transfer::Result &result) {
         if (!result.intoItself.isEmpty())
@@ -388,8 +420,8 @@ void FileOps::compress(const QStringList &paths, const QString &dir)
 
     // -a picks the format from the name; "./" keeps names that start with "-" from reading as options
     QStringList args = { QStringLiteral("-a"), QStringLiteral("-cf"), archive, QStringLiteral("-C"), dir };
-    for (const QString &path : paths)
-        args.append(QStringLiteral("./") + nameOf(path));
+    for (const QString &path : topLevelPaths(paths))
+        args.append(QStringLiteral("./") + QDir(dir).relativeFilePath(path));
     bsdtar(bsdtarPath, args, archive, Step::Compressed);
 }
 

@@ -292,10 +292,15 @@ Apps *Apps::create(QQmlEngine *engine, QJSEngine *)
 
 QVariantMap Apps::forFile(const QString &path) const
 {
-    const QMimeType mime = QMimeDatabase().mimeTypeForFile(path);
+    return forMime(QMimeDatabase().mimeTypeForFile(path).name());
+}
+
+QVariantMap Apps::forMime(const QString &type) const
+{
+    const QMimeType mime = QMimeDatabase().mimeTypeForName(type);
     const QList<Entry> apps = entries();
-    const QString fallback = defaultId(mime, apps);
-    const QStringList own = namesOf(mime);
+    const QString fallback = mime.isValid() ? defaultId(mime, apps) : QString();
+    const QStringList own = mime.isValid() ? namesOf(mime) : QStringList { type };
     const QStringList ancestors = mime.allAncestors();
 
     QList<std::pair<int, const Entry *>> ranked; // 0 the default, 1 for the type, 2 for what it's a kind of
@@ -318,7 +323,8 @@ QVariantMap Apps::forFile(const QString &path) const
     QVariantList list;
     for (const auto &[rank, app] : std::as_const(ranked))
         list.append(describe(*app, rank == 0));
-    return { { QStringLiteral("mime"), mime.name() }, { QStringLiteral("type"), mime.comment() },
+    return { { QStringLiteral("mime"), mime.isValid() ? mime.name() : type },
+             { QStringLiteral("type"), mime.isValid() ? mime.comment() : type },
              { QStringLiteral("apps"), list } };
 }
 

@@ -16,7 +16,7 @@ set(PFM_QML
     Sidebar.qml PlaceButton.qml SectionLabel.qml
     FileView.qml Pane.qml TabPage.qml TabBar.qml FileTile.qml FileRow.qml KindBadge.qml ThinScrollBar.qml
     StatusBar.qml Chip.qml FileMenu.qml FolderDrop.qml MenuEntry.qml
-    ConfirmDialog.qml NameDialog.qml PropertiesDialog.qml OpenWithDialog.qml KeysDialog.qml DialogButton.qml
+    ConfirmDialog.qml NameDialog.qml PropertiesDialog.qml PreviewDialog.qml OpenWithDialog.qml KeysDialog.qml SettingsDialog.qml DialogButton.qml
 )
 list(TRANSFORM PFM_QML PREPEND qml/ OUTPUT_VARIABLE PFM_QML_FILES)
 foreach(file IN LISTS PFM_QML)
@@ -35,6 +35,8 @@ qt_add_qml_module(pfm
         src/Places.h src/Places.cpp
         src/Transfer.h src/Transfer.cpp
         src/Apps.h src/Apps.cpp
+        src/MimeSettings.h src/MimeSettings.cpp
+        src/Preview.h src/Preview.cpp
     QML_FILES ${PFM_QML_FILES}
 )
 target_include_directories(pfm PUBLIC src)

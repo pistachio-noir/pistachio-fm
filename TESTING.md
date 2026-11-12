@@ -1,7 +1,7 @@
 # What to test by hand
 
-The automated checks cover the backend (`build/tst_backend`, 39 checks) and a mouse-and-keyboard run on a made-up
-home folder (`build/pfm-shots OUTDIR`, 23 checks). This list is what they can't see: your real desktop, real
+The automated checks cover the backend (`build/tst_backend`) and a mouse-and-keyboard run on a made-up
+home folder (`build/pfm-shots OUTDIR`). This list is what they can't see: your real desktop, real
 files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm ~/Downloads`). Compare it with
 `design/pistachio-file-manager/html/*.html`.
 
@@ -35,8 +35,48 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 - [ + ] Click, Ctrl+click, Shift+click, Ctrl+A, Escape, a click on empty space
 - [ + ] Arrows in the grid and the list, Shift+arrows, Home/End, PageUp/PageDown, Enter
 - [ + ] Typing over the files searches; Ctrl+F; Escape clears; Enter or Down goes back to the results
+- [ ] Click the search icon to include subfolders: duplicate filenames show their relative paths in grid/list;
+  opening a file or folder, rename, trash, copy and undo target the actual result. Tab to the scope button and
+  press Space or Enter to toggle it. Hidden subfolders follow Ctrl+H; directory symlinks are not traversed.
+- [ ] Search a large tree; edit the query, clear it or navigate away while scanning: stale results never return.
+  Unreadable subfolders are skipped. F5 finds new matches in subfolders that had no previous results.
 - [ + ] Sorting: the "Sorted by" chip menu, and the list's column names
 - [ + ] Ctrl+1 / Ctrl+2 switch grid and list
+
+## Quick preview (Space)
+
+- [ ] Select a text file or source file, Space: readable literal text (including `<b>`, without rendering HTML).
+  Unicode with a BOM, an empty file and a file larger than 128 KiB: sensible content/notice, responsive UI.
+- [ ] Select an image with spaces, `#` or `%` in its name: it fits the dialog with the right orientation.
+  A broken image shows an error. No crop to a round thumbnail.
+- [ ] Space again, Escape, Close and a click outside all close the preview; file selection remains and
+  keyboard navigation returns to the files. Closing while loading never reopens an obsolete preview.
+- [ ] Scroll long text, resize the window, select/copy text. Preview never modifies the source file.
+- [ ] Spaces in search/path fields remain text input. No selection, several selected files or a folder:
+  no arbitrary preview and no space appended to the file filter.
+- [ ] Split panes and recursive-search results: preview the file selected in the active pane.
+  Media/Office/other unsupported types show a clear fallback.
+- [ ] PDF with several pages: Space shows page 1 and the count; buttons and Left/Right change pages;
+  previous/next disable at document boundaries. Check a rotated/scanned PDF and a name containing `#`.
+- [ ] Images/PDF: −/+ buttons, +/− keys and Ctrl+wheel zoom; drag/scroll pans the enlarged content.
+  Fit or 0 resets zoom and panning; zoom stays between fit and 4×. New files start fitted, PDF page
+  changes preserve zoom. Resize while zoomed and check that controls and scrollbars stay usable.
+- [ ] Close a PDF during rendering or change files: no stale image reappears and temporary page PNGs
+  are removed. Missing Poppler, damaged/password-protected PDFs and overly slow helpers show errors.
+  Text/images remain usable without Poppler; no source files are modified.
+
+## Settings: default applications
+
+- [ ] Toolbar Settings and Ctrl+comma open Default applications; Escape/Close/outside return focus to files.
+- [ ] Popular types are listed; search `PDF`, `image/png`, or another MIME; Enter inspects the first match.
+  A custom exact MIME can be inspected without a sample file. Type list keyboard arrows + Enter work.
+- [ ] Current application agrees with `xdg-mime query default application/pdf` for PDF (likewise for
+  the selected type); no default appears as None, an unknown app ID remains visible instead of a guessed name.
+- [ ] Selecting a different app does not change the default; Apply writes, verifies, and reports the actual
+  effective result without launching the application. Note the old app before a manual change and restore it.
+- [ ] Recommended/Show all, app-list keyboard selection, Apply activation, and long names work.
+- [ ] Quick type changes never display stale defaults; closing during Apply doesn't interrupt the save.
+  A missing/failing/slow xdg-mime produces an error; a higher-priority override is not reported as success.
 
 ## Menus and dialogs
 
@@ -109,5 +149,12 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 ## Not built yet
 
 A picture under the cursor while dragging (Hyprland shows only the cursor), dropping on breadcrumbs, scrolling or
-opening folders while dragging over them, thumbnails of videos and PDFs, search in subfolders, scrolling while drag-selecting, reordering tabs or pulling one out into a window of its own, encrypted drives (udiskie would have to ask for the password), powering a stick off after unmounting, properties of several items at once or of the folder you're in, changing
-permissions, redo, a "Replace?" question when a pasted name is taken (both are kept), cancelling a paste,.
+opening folders while dragging over them, thumbnails of videos and PDFs, scrolling while drag-selecting, reordering tabs or pulling one out into a window of its own, encrypted drives (udiskie would have to ask for the password), powering a stick off after unmounting, properties of several items at once or of the folder you're in, changing
+permissions, redo, a "Replace?" question when a pasted name is taken (both are kept).
+
+## Automated run notes (12 November 2026)
+
+The inherited `listing` test expects numeric collation; this environment's `LC_ALL=C.UTF-8` orders
+`file10` before `file2`. Run the backend with `LC_ALL=en_US.UTF-8` for that expectation. The screenshot
+fixtures include deliberately invalid images, which produce thumbnail warnings; inspect PASS/FAIL and
+exit status separately. Real desktop and drive checks above still require manual testing.

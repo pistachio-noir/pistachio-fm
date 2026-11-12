@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirListing>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QImageReader>
@@ -29,6 +30,29 @@ QString childPrefix(const QString &path)
     return path == QLatin1String("/") ? path : path + u'/';
 }
 
+FileEntry fileEntry(const QFileInfo &info)
+{
+    QMimeDatabase mimes;
+    static const QList<QByteArray> pictureTypes = QImageReader::supportedMimeTypes();
+    FileEntry entry;
+    entry.name = info.fileName();
+    entry.path = info.absoluteFilePath();
+    entry.isDir = info.isDir();
+    entry.hidden = entry.name.startsWith(u'.');
+    entry.modified = info.lastModified();
+    if (entry.isDir) {
+        entry.kind = QStringLiteral("folder");
+    } else {
+        entry.size = info.size();
+        // by name only: reading every file's first bytes would make big folders slow
+        const QMimeType mime = mimes.mimeTypeForFile(info, QMimeDatabase::MatchExtension);
+        entry.kind = Format::kind(mime);
+        entry.picture = entry.kind == QLatin1String("image") && pictureTypes.contains(mime.name().toLatin1());
+        entry.suffix = info.suffix().toLower();
+    }
+    return entry;
+}
+
 QList<FileEntry> listFolder(const QString &path, QString *error)
 {
     QList<FileEntry> entries;
@@ -42,30 +66,11 @@ QList<FileEntry> listFolder(const QString &path, QString *error)
         return entries;
     }
 
-    QMimeDatabase mimes;
-    static const QList<QByteArray> pictureTypes = QImageReader::supportedMimeTypes(); // RAW photos aren't
     const QFileInfoList infos = QDir(path).entryInfoList(
         QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System, QDir::NoSort);
     entries.reserve(infos.size());
-    for (const QFileInfo &info : infos) {
-        FileEntry entry;
-        entry.name = info.fileName();
-        entry.path = info.absoluteFilePath();
-        entry.isDir = info.isDir();
-        entry.hidden = entry.name.startsWith(u'.');
-        entry.modified = info.lastModified();
-        if (entry.isDir) {
-            entry.kind = QStringLiteral("folder");
-        } else {
-            entry.size = info.size();
-            // by name only: reading every file's first bytes would make big folders slow
-            const QMimeType mime = mimes.mimeTypeForFile(info, QMimeDatabase::MatchExtension);
-            entry.kind = Format::kind(mime);
-            entry.picture = entry.kind == QLatin1String("image") && pictureTypes.contains(mime.name().toLatin1());
-            entry.suffix = info.suffix().toLower();
-        }
-        entries.append(entry);
-    }
+    for (const QFileInfo &info : infos)
+        entries.append(fileEntry(info));
     return entries;
 }
 
@@ -136,7 +141,7 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
     switch (role) {
     case Qt::DisplayRole:
     case NameRole:
-        return entry.name;
+        return m_recursive && !m_filter.isEmpty() ? QDir(m_path).relativeFilePath(entry.path) : entry.name;
     case PathRole:
         return entry.path;
     case KindRole:
@@ -197,7 +202,26 @@ void FolderModel::setFilter(const QString &filter)
         return;
     m_filter = filter;
     emit filterChanged();
+    if (m_recursive) {
+        m_all.clear();
+        m_allIndex.clear();
+        rebuild();
+        startListing();
+    } else {
+        rebuild();
+    }
+}
+
+void FolderModel::setRecursive(bool recursive)
+{
+    if (recursive == m_recursive)
+        return;
+    m_recursive = recursive;
+    emit recursiveChanged();
+    m_all.clear();
+    m_allIndex.clear();
     rebuild();
+    startListing();
 }
 
 void FolderModel::setSortKey(SortKey key)
@@ -236,7 +260,9 @@ QString FolderModel::summary() const
 {
     if (!m_error.isEmpty() || (m_loading && m_all.isEmpty()))
         return {};
-    QStringList parts = { m_filter.isEmpty() ? Format::items(m_total)
+    QStringList parts = { m_recursive && !m_filter.isEmpty() ? (count() == 1 ? QStringLiteral("1 match")
+                                                                 : QStringLiteral("%1 matches").arg(count()))
+                              : m_filter.isEmpty() ? Format::items(m_total)
                                              : QStringLiteral("%1 of %2").arg(count()).arg(Format::items(m_total)) };
     if (!m_selected.isEmpty()) {
         parts.append(QStringLiteral("%1 selected").arg(m_selected.size()));
@@ -358,6 +384,10 @@ void FolderModel::load(const QString &path)
         m_filter.clear();
         emit filterChanged();
     }
+    if (m_recursive) {
+        m_recursive = false;
+        emit recursiveChanged();
+    }
     emit pathChanged();
     emit countChanged();
     emit selectionChanged();
@@ -374,6 +404,7 @@ void FolderModel::startListing()
     const auto latest = m_generation;
     const QString path = m_path;
     const bool showHidden = m_showHidden;
+    const QString query = m_recursive ? m_filter : QString();
     const QPointer<FolderModel> self(this);
     setLoading(true);
 
@@ -388,8 +419,35 @@ void FolderModel::startListing()
         };
 
         QString error;
-        const QList<FileEntry> entries = listFolder(path, &error);
+        QList<FileEntry> entries;
+        if (query.isEmpty()) {
+            entries = listFolder(path, &error);
+        } else {
+            const QFileInfo root(path);
+            if (!root.isDir() || !root.isReadable() || !root.isExecutable()) {
+                error = QStringLiteral("Can't search this folder");
+            } else {
+                QDirListing::IteratorFlags flags = QDirListing::IteratorFlag::Recursive;
+                if (showHidden)
+                    flags |= QDirListing::IteratorFlag::IncludeHidden;
+                // Do not follow directory links: they can escape the root or loop back into it.
+                for (const auto &item : QDirListing(path, flags)) {
+                    if (*latest != generation)
+                        return;
+                    if (item.fileName().contains(query, Qt::CaseInsensitive)) {
+                        FileEntry entry = fileEntry(item.fileInfo());
+                        entry.itemCount = FileEntry::Unreadable; // no item counts in search results
+                        entries.append(entry);
+                    }
+                }
+            }
+        }
+        if (*latest != generation)
+            return;
         post([entries, error](FolderModel *model) { model->listed(entries, error); });
+
+        if (!query.isEmpty())
+            return;
 
         // then how many items each folder holds, in batches so a slow disk shows some early
         QHash<QString, int> counts;
@@ -424,6 +482,22 @@ void FolderModel::listed(QList<FileEntry> entries, const QString &error)
     m_allIndex.clear();
     for (qsizetype i = 0; i < m_all.size(); ++i)
         m_allIndex.insert(m_all.at(i).path, i);
+
+    QStringList oldWatches = m_watcher.directories();
+    oldWatches.removeAll(m_path);
+    if (!oldWatches.isEmpty())
+        m_watcher.removePaths(oldWatches);
+    if (m_recursive && !m_filter.isEmpty()) {
+        // shortcut: watch result parents; new matches elsewhere need Reload until full recursive watching is needed.
+        QSet<QString> parents;
+        for (const FileEntry &entry : std::as_const(m_all))
+            parents.insert(parentOf(entry.path));
+        parents.remove(m_path);
+        for (const QString &parent : std::as_const(parents)) {
+            if (QFileInfo(parent).isDir())
+                m_watcher.addPath(parent);
+        }
+    }
 
     setError(error);
     setLoading(false);

@@ -41,6 +41,29 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   (Nautilus' file, re-read on the 4 s poll; only that line changes); a box drag on empty space selects.
 - The version (owner's request 7 Nov, no board): `v1 · <HEAD's short hash>` in subtext at the status bar's right corner,
   right of the sort chip; `cmake/version.cmake` reads the hash on every build into `build/version.h`.
+- Recursive filename search (12 Nov, implementation from CODEX-HANDOFF.md; no new board): clicking the search
+  icon toggles subfolder search; typing/Ctrl+F retains the fast local filter by default. Names in results show
+  relative paths. No directory symlink traversal; hidden subtrees follow Ctrl+H. Navigation resets the scope;
+  Trash does not offer it. Result parents are watched; F5 is needed for new matches elsewhere. No index or
+  content search. Rename validation uses the result's actual parent; compression keeps relative source paths. Recursive
+  file operations ignore descendants already covered by a selected real directory, never by a selected symlink.
+- Quick preview (owner requested Space on 12 Nov; implementation defaults, no new board): one selected
+  file in the focused file view opens a Pistachio Noir popup. Space/Escape close, text fields retain spaces.
+  Text is read-only/plain (UTF-8 or BOM Unicode), capped at 128 KiB with notice, loaded in a worker with
+  stale-result invalidation. Images fit the popup using Qt image support. Unsupported files/errors show
+  explicit messages. Owner's later scope reply includes PDF: use installed Poppler (pdfinfo/pdftoppm),
+  one page at a time up to 1600 px with count/previous/next and Left/Right. Workers kill helpers on close
+  or after 10 seconds; page PNGs live in private temporary directories and are removed when replaced/closed.
+  Zoom (owner's request, 12 Nov): images/PDF zoom from fit to 4× with buttons, +/− keys or Ctrl+wheel;
+  drag/scroll pans, Fit/0 resets; each opened file starts fitted, PDF page changes retain zoom. Image
+  decode dimensions are capped at 4096 px; PDF rendering remains capped at 1600 px.
+  Missing Poppler, damaged/password-protected PDFs show errors. No password dialog, media or office renderer.
+- Default applications settings (owner's request/scope 12 Nov): toolbar sliders button and Ctrl+comma;
+  popular types plus search of any MIME, with custom exact types supported. Settings uses asynchronous
+  xdg-mime queries for effective desktop defaults, recommended/all app choices from Apps.forMime/all,
+  and explicit Apply with verification. No app launch or write on selection. Changes affect the desktop,
+  with a five-second process limit; closing the popup preserves an Apply already in progress. Unknown
+  app IDs and invalid MIME input are rejected. Existing Open with launch behavior is preserved.
 - The keys card (toolbar's keyboard button, F1, ?; owner's request 1 Nov, no board) lists the keys from data in
   `KeysDialog.qml`, chips as the shell launcher's cheat sheet: keep it in step with Main's Shortcuts and README.
 - Window corners, border and shadow are Hyprland's. Never edit the Hyprland config.

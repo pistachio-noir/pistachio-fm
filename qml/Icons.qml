@@ -13,6 +13,8 @@ QtObject {
     readonly property list<string> search: ["M3 11a8 8 0 1 0 16 0a8 8 0 1 0-16 0", "M21 21l-4.3-4.3"]
     readonly property list<string> keyboard: ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "M6 8h.01", "M10 8h.01", "M14 8h.01", "M18 8h.01", "M8 12h.01", "M12 12h.01", "M16 12h.01", "M7 16h10"]
     readonly property list<string> plus: ["M5 12h14", "M12 5v14"]
+    readonly property list<string> minus: ["M5 12h14"]
+    readonly property list<string> settings: ["M21 4h-7", "M10 4H3", "M21 12h-9", "M8 12H3", "M21 20h-5", "M12 20H3", "M14 2v4", "M8 10v4", "M16 18v4"]
     readonly property list<string> columns: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M12 3v18"] // a split tab
     readonly property list<string> terminal: ["M4 17l6-6-6-6", "M12 19h8"]
     readonly property list<string> extract: ["M3 3h18a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z", "M4 8v11a2 2 0 0 0 2 2h2", "M20 8v11a2 2 0 0 1-2 2h-2", "M9 15l3-3 3 3", "M12 12v9"] // archive-restore

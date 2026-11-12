@@ -3,6 +3,9 @@
 #include "FolderModel.h"
 #include "Format.h"
 #include "Places.h"
+#include "Preview.h"
+#include "MimeSettings.h"
+#include "PreviewPdf.h"
 #include "Transfer.h"
 
 #include <QClipboard>
@@ -10,16 +13,19 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QGuiApplication>
+#include <QImage>
 #include <QLocale>
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QSignalSpy>
+#include <QScopeGuard>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUrl>
 
 #include <sys/stat.h>
+#include <signal.h>
 
 // The backend without a window. main() points HOME and XDG_DATA_HOME into a temporary folder
 // first, so trashing never reaches the real trash.
@@ -80,6 +86,268 @@ private:
     }
 
 private slots:
+    void mimeSettingsDefaults()
+    {
+        const QString tools = dir(QStringLiteral("mime-settings-tools"));
+        const QString state = tools + QStringLiteral("/default");
+        const QString savedType = tools + QStringLiteral("/type");
+        const QString applications = m_home + QStringLiteral("/.local/share/applications");
+        QDir().mkpath(applications);
+        for (const char *name : { "a", "b" }) {
+            const QByteArray id(name);
+            write(applications + QStringLiteral("/pfm-settings-") + QLatin1String(name) + QStringLiteral(".desktop"),
+                  "[Desktop Entry]\nType=Application\nName=Settings " + id + "\nExec=/bin/true\nMimeType=text/plain;text/x-pfm-custom;\n");
+        }
+        write(state, "pfm-settings-a.desktop\n");
+        const QString helper = tools + QStringLiteral("/xdg-mime");
+        write(helper, "#!/bin/sh\nif [ \"$1\" = query ]; then /bin/cat '" + state.toUtf8()
+              + "'; elif [ \"$1\" = default ]; then printf '%s\\n' \"$2\" > '" + state.toUtf8()
+              + "'; printf '%s' \"$3\" > '" + savedType.toUtf8() + "'; fi\n");
+        QVERIFY(QFile::setPermissions(helper, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        const QByteArray originalPath = qgetenv("PATH");
+        const auto restore = qScopeGuard([&] { qputenv("PATH", originalPath); });
+        qputenv("PATH", QFile::encodeName(tools) + ':' + originalPath);
+        MimeSettings settings;
+        bool hasPdf = false;
+        for (const QVariant &row : settings.types())
+            hasPdf |= row.toMap().value("mime") == QLatin1String("application/pdf") && row.toMap().value("popular").toBool();
+        QVERIFY(hasPdf);
+        settings.inspect(QStringLiteral("text/plain"));
+        QTRY_VERIFY(!settings.busy());
+        QCOMPARE(settings.info().value("currentId").toString(), QStringLiteral("pfm-settings-a.desktop"));
+        QCOMPARE(settings.info().value("currentName").toString(), QStringLiteral("Settings a"));
+        QVERIFY(!QFile::exists(savedType)); // looking at defaults never writes them
+        settings.save(QStringLiteral("not-installed.desktop"));
+        QVERIFY(!settings.error().isEmpty());
+        QVERIFY(!QFile::exists(savedType));
+        settings.inspect(QStringLiteral("text/x-pfm-custom"));
+        QTRY_VERIFY(!settings.busy());
+        settings.save(QStringLiteral("pfm-settings-b.desktop"));
+        QTRY_VERIFY(!settings.busy());
+        QVERIFY2(settings.error().isEmpty(), qPrintable(settings.error()));
+        QCOMPARE(contents(savedType), QByteArray("text/x-pfm-custom"));
+        QCOMPARE(settings.info().value("currentId").toString(), QStringLiteral("pfm-settings-b.desktop"));
+        QCOMPARE(settings.info().value("recommended").toList().first().toMap().value("id").toString(),
+                 QStringLiteral("pfm-settings-b.desktop"));
+        settings.inspect(QStringLiteral("application/pdf"));
+        settings.inspect(QStringLiteral("image/png"));
+        QTRY_VERIFY(!settings.busy());
+        QCOMPARE(settings.info().value("mime").toString(), QStringLiteral("image/png"));
+        QCOMPARE(settings.info().value("currentId").toString(), QStringLiteral("pfm-settings-b.desktop"));
+        settings.inspect(QStringLiteral("text/plain\nwrong"));
+        QVERIFY(!settings.error().isEmpty());
+        QCOMPARE(contents(savedType), QByteArray("text/x-pfm-custom"));
+
+        // Successful write exit code is not enough: the effective default must match.
+        write(helper, "#!/bin/sh\nif [ \"$1\" = query ]; then printf 'pfm-settings-a.desktop\\n'; fi\n");
+        settings.inspect(QStringLiteral("text/plain"));
+        QTRY_VERIFY(!settings.busy());
+        settings.save(QStringLiteral("pfm-settings-b.desktop"));
+        QTRY_VERIFY(!settings.busy());
+        QVERIFY(!settings.error().isEmpty());
+        QCOMPARE(settings.info().value("currentId").toString(), QStringLiteral("pfm-settings-a.desktop"));
+        write(helper, "#!/bin/sh\nexit 7\n");
+        settings.inspect(QStringLiteral("text/plain"));
+        QTRY_VERIFY(!settings.busy());
+        QVERIFY(!settings.error().isEmpty());
+        qputenv("PATH", QFile::encodeName(dir(QStringLiteral("mime-no-tools"))));
+        settings.inspect(QStringLiteral("text/plain"));
+        QVERIFY(!settings.busy());
+        QVERIFY(!settings.error().isEmpty());
+    }
+
+    void mimeSettingsRealHelper()
+    {
+        if (QStandardPaths::findExecutable(QStringLiteral("xdg-mime")).isEmpty())
+            QSKIP("xdg-mime isn't installed");
+        const QByteArray desktop = qgetenv("XDG_CURRENT_DESKTOP");
+        const QByteArray session = qgetenv("DESKTOP_SESSION");
+        const auto restore = qScopeGuard([&] {
+            qputenv("XDG_CURRENT_DESKTOP", desktop);
+            qputenv("DESKTOP_SESSION", session);
+        });
+        qputenv("XDG_CURRENT_DESKTOP", "X-PFM-Test");
+        qputenv("DESKTOP_SESSION", "X-PFM-Test");
+        const QString applications = m_home + QStringLiteral("/.local/share/applications");
+        QDir().mkpath(applications);
+        for (const char *name : { "a", "b" })
+            write(applications + QStringLiteral("/pfm-real-") + QLatin1String(name) + QStringLiteral(".desktop"),
+                  QByteArray("[Desktop Entry]\nType=Application\nName=Real ") + name
+                  + "\nExec=/bin/true %f\nMimeType=text/x-pfm-real;\n");
+        const QString config = qEnvironmentVariable("XDG_CONFIG_HOME") + QStringLiteral("/mimeapps.list");
+        QDir().mkpath(QFileInfo(config).path());
+        write(config, "[Default Applications]\ntext/x-pfm-real=pfm-real-a.desktop;\nimage/png=keep.desktop;\n\n[Other]\nkeep=me\n");
+        MimeSettings settings;
+        settings.inspect(QStringLiteral("text/x-pfm-real"));
+        QTRY_VERIFY(!settings.busy());
+        QVERIFY2(settings.error().isEmpty(), qPrintable(settings.error()));
+        QCOMPARE(settings.info().value("currentId").toString(), QStringLiteral("pfm-real-a.desktop"));
+        settings.save(QStringLiteral("pfm-real-b.desktop"));
+        QTRY_VERIFY(!settings.busy());
+        QVERIFY2(settings.error().isEmpty(), qPrintable(settings.error()));
+        QCOMPARE(settings.info().value("currentId").toString(), QStringLiteral("pfm-real-b.desktop"));
+        QVERIFY(contents(config).contains("image/png=keep.desktop;"));
+        QVERIFY(contents(config).contains("keep=me"));
+    }
+
+    void previewContent()
+    {
+        const QString path = dir(QStringLiteral("preview-content"));
+        const QString textPath = path + QStringLiteral("/notes #1.txt");
+        write(textPath, QStringLiteral("Zażółć gęślą\n<b>literal</b>\n").toUtf8());
+        Preview preview;
+        preview.load(textPath);
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("text"));
+        QCOMPARE(preview.content().value("text").toString(), QStringLiteral("Zażółć gęślą\n<b>literal</b>\n"));
+        QCOMPARE(preview.content().value("url").toUrl().toLocalFile(), textPath);
+
+        write(path + QStringLiteral("/utf16.txt"), QByteArray::fromHex("fffe41000a00"));
+        preview.load(path + QStringLiteral("/utf16.txt"));
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("text").toString(), QStringLiteral("A\n"));
+        touch(path + QStringLiteral("/empty.txt"));
+        preview.load(path + QStringLiteral("/empty.txt"));
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("text"));
+        QVERIFY(preview.content().value("text").toString().isEmpty());
+        QVERIFY(!preview.content().value("note").toString().isEmpty());
+
+        write(path + QStringLiteral("/large.txt"), QByteArray(200000, 'a'));
+        preview.load(path + QStringLiteral("/large.txt"));
+        QTRY_VERIFY(!preview.loading());
+        const QString prefix = preview.content().value("text").toString();
+        QVERIFY(prefix.startsWith(QStringLiteral("aaaa")));
+        QVERIFY(prefix.size() < 200000);
+        QVERIFY(!preview.content().value("note").toString().isEmpty());
+    }
+
+    void previewErrorsAndCancellation()
+    {
+        const QString path = dir(QStringLiteral("preview-errors"));
+        Preview preview;
+        write(path + QStringLiteral("/binary.txt"), QByteArray("a\0b", 3));
+        preview.load(path + QStringLiteral("/binary.txt"));
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("unsupported"));
+        preview.load(path + QStringLiteral("/missing"));
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("error"));
+        const QString fifo = path + QStringLiteral("/pipe.txt");
+        QCOMPARE(::mkfifo(QFile::encodeName(fifo).constData(), 0600), 0);
+        preview.load(fifo);
+        QTRY_VERIFY(!preview.loading());
+        QVERIFY(preview.content().value("kind").toString() != QLatin1String("text"));
+        preview.load(path);
+        QTRY_VERIFY(!preview.loading());
+        QVERIFY(preview.content().value("kind").toString() != QLatin1String("text"));
+
+        write(path + QStringLiteral("/first.txt"), "first");
+        write(path + QStringLiteral("/second.txt"), "second");
+        preview.load(path + QStringLiteral("/first.txt"));
+        preview.load(path + QStringLiteral("/second.txt"));
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("text").toString(), QStringLiteral("second"));
+        preview.load(path + QStringLiteral("/first.txt"));
+        preview.clear();
+        QTest::qWait(100);
+        QVERIFY(!preview.loading());
+        QVERIFY(preview.content().isEmpty());
+    }
+
+    void previewImageAndUnsupported()
+    {
+        const QString path = dir(QStringLiteral("preview-image"));
+        const QString imagePath = path + QStringLiteral("/picture #%.png");
+        QImage image(32, 16, QImage::Format_RGB32);
+        image.fill(Qt::red);
+        QVERIFY(image.save(imagePath));
+        Preview preview;
+        preview.load(imagePath);
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("image"));
+        QCOMPARE(preview.content().value("url").toUrl().toLocalFile(), imagePath);
+        write(path + QStringLiteral("/document.docx"), "unsupported");
+        preview.load(path + QStringLiteral("/document.docx"));
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("unsupported"));
+        QVERIFY(!preview.content().value("note").toString().isEmpty());
+    }
+
+    void previewPdfPages()
+    {
+        if (QStandardPaths::findExecutable(QStringLiteral("pdfinfo")).isEmpty()
+            || QStandardPaths::findExecutable(QStringLiteral("pdftoppm")).isEmpty())
+            QSKIP("Poppler isn't installed");
+        const QString path = dir(QStringLiteral("preview-pdf")) + QStringLiteral("/pages #%.pdf");
+        QVERIFY(makePreviewPdf(path));
+        Preview preview;
+        preview.load(path);
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("pdf"));
+        QCOMPARE(preview.content().value("pages").toInt(), 2);
+        QCOMPARE(preview.content().value("page").toInt(), 1);
+        const QString firstPath = preview.content().value("url").toUrl().toLocalFile();
+        const QImage first(firstPath);
+        QVERIFY(!first.isNull());
+        QVERIFY(first.width() <= 1600 && first.height() <= 1600);
+        QCOMPARE(first.pixelColor(first.width() / 2, first.height() / 4), QColor(Qt::white));
+        QVERIFY(QMetaObject::invokeMethod(&preview, "setPage", Q_ARG(int, 2)));
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("page").toInt(), 2);
+        const QString secondPath = preview.content().value("url").toUrl().toLocalFile();
+        const QImage second(secondPath);
+        QVERIFY(!second.isNull());
+        QCOMPARE(second.pixelColor(second.width() / 2, second.height() / 4), QColor(232, 242, 255));
+        QVERIFY(!QFile::exists(firstPath));
+        QVERIFY(QMetaObject::invokeMethod(&preview, "setPage", Q_ARG(int, 3)));
+        QCOMPARE(preview.content().value("page").toInt(), 2);
+        preview.clear();
+        QVERIFY(!QFile::exists(secondPath));
+    }
+
+    void previewPdfErrors()
+    {
+        const QString path = dir(QStringLiteral("preview-pdf-errors")) + QStringLiteral("/broken.pdf");
+        write(path, "%PDF-1.4\nbroken\n");
+        Preview preview;
+        preview.load(path);
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("error"));
+        QVERIFY(!preview.content().value("note").toString().isEmpty());
+    }
+
+    void previewPdfMissingToolsAndCancellation()
+    {
+        const QString folder = dir(QStringLiteral("preview-pdf-tools"));
+        const QString path = folder + QStringLiteral("/pages.pdf");
+        QVERIFY(makePreviewPdf(path));
+        const QString tools = dir(QStringLiteral("preview-tools"));
+        const QByteArray originalPath = qgetenv("PATH");
+        const auto restorePath = qScopeGuard([&] { qputenv("PATH", originalPath); });
+        qputenv("PATH", QFile::encodeName(tools));
+        Preview preview;
+        preview.load(path);
+        QTRY_VERIFY(!preview.loading());
+        QCOMPARE(preview.content().value("kind").toString(), QStringLiteral("error"));
+        QVERIFY(preview.content().value("note").toString().contains(QStringLiteral("pdfinfo")));
+
+        const QString marker = folder + QStringLiteral("/pid");
+        write(tools + QStringLiteral("/pdfinfo"), "#!/bin/sh\nprintf '%s' \"$$\" > \"" + marker.toUtf8()
+              + "\"\nexec /bin/sleep 30\n");
+        write(tools + QStringLiteral("/pdftoppm"), "#!/bin/sh\nexit 1\n");
+        for (const QString &name : { QStringLiteral("pdfinfo"), QStringLiteral("pdftoppm") })
+            QVERIFY(QFile::setPermissions(tools + u'/' + name, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        preview.load(path);
+        QTRY_VERIFY(QFile::exists(marker) && !contents(marker).isEmpty());
+        const qint64 pid = contents(marker).toLongLong();
+        QVERIFY(pid > 0);
+        preview.clear();
+        QTRY_VERIFY(::kill(pid_t(pid), 0) == -1);
+        QVERIFY(!preview.loading());
+        QVERIFY(preview.content().isEmpty());
+    }
+
     void sizes_data()
     {
         QTest::addColumn<qint64>("bytes");
@@ -205,6 +473,127 @@ private slots:
         model.setFilter(QStringLiteral("VIS"));
         QCOMPARE(names(model), (QStringList { "visible.txt", "Vision.png" }));
         QCOMPARE(model.totalCount(), 3);
+    }
+
+    void recursiveSearch()
+    {
+        const QString path = dir(QStringLiteral("recursive-search"));
+        QDir().mkpath(path + QStringLiteral("/nested/deep"));
+        QDir().mkpath(path + QStringLiteral("/.hidden"));
+        touch(path + QStringLiteral("/report.txt"));
+        touch(path + QStringLiteral("/nested/deep/REPORT.txt"));
+        touch(path + QStringLiteral("/.hidden/report.txt"));
+        QVERIFY(QFile::link(path, path + QStringLiteral("/nested/loop")));
+
+        FolderModel model;
+        model.go(path);
+        QTRY_VERIFY(!model.loading());
+        model.setFilter(QStringLiteral("report"));
+        QCOMPARE(model.count(), 1); // the fast filter stays local
+        QVERIFY(model.setProperty("recursive", true));
+        QTRY_VERIFY(!model.loading());
+        QCOMPARE(model.count(), 2);
+        QVERIFY(names(model).contains(QStringLiteral("nested/deep/REPORT.txt")));
+        const QString nested = path + QStringLiteral("/nested/deep/REPORT.txt");
+        QVERIFY(model.rowOf(nested) >= 0);
+        model.select(model.rowOf(nested));
+        QCOMPARE(model.selectedPaths(), QStringList { nested });
+
+        model.setShowHidden(true);
+        QTRY_VERIFY(!model.loading());
+        QCOMPARE(model.count(), 3);
+        model.setFilter(QStringLiteral("no-match"));
+        model.setFilter(QStringLiteral("REPORT")); // discard an earlier worker's results
+        QTRY_VERIFY(!model.loading());
+        QCOMPARE(model.count(), 3);
+        model.setFilter({});
+        QTRY_VERIFY(!model.loading());
+        QCOMPARE(model.count(), 3); // back to the root listing, not the search results
+        QVERIFY(names(model).contains(QStringLiteral("nested")));
+
+        model.setFilter(QStringLiteral("report"));
+        model.go(path + QStringLiteral("/nested")); // navigation cancels the search
+        QTRY_VERIFY(!model.loading());
+        QVERIFY(model.filter().isEmpty());
+        QVERIFY(!model.property("recursive").toBool());
+        QCOMPARE(model.count(), 2);
+    }
+
+    void recursiveSearchLiveResults()
+    {
+        const QString path = dir(QStringLiteral("search-live"));
+        QDir().mkpath(path + QStringLiteral("/nested"));
+        const QString oldPath = path + QStringLiteral("/nested/match.txt");
+        const QString newPath = path + QStringLiteral("/nested/match-renamed.txt");
+        touch(oldPath);
+        FolderModel model;
+        model.go(path);
+        model.setRecursive(true);
+        model.setFilter(QStringLiteral("match"));
+        QTRY_VERIFY(!model.loading());
+        QVERIFY(model.rowOf(oldPath) >= 0);
+        QVERIFY(QFile::rename(oldPath, newPath));
+        QTRY_VERIFY_WITH_TIMEOUT(model.rowOf(newPath) >= 0, 2000);
+        QCOMPARE(model.rowOf(oldPath), -1);
+        QVERIFY(QFile::remove(newPath));
+        QTRY_COMPARE(model.count(), 0);
+    }
+
+    void searchBrokenLink()
+    {
+        const QString path = dir(QStringLiteral("search-broken"));
+        QVERIFY(QFile::link(path + QStringLiteral("/missing"), path + QStringLiteral("/match.txt")));
+        FolderModel model;
+        model.go(path);
+        model.setRecursive(true);
+        model.setFilter(QStringLiteral("match"));
+        QTRY_VERIFY(!model.loading());
+        QCOMPARE(model.count(), 1);
+    }
+
+    void overlappingSelectionOperations()
+    {
+        Places places; // create the scratch home's trash, as the app does
+        const QString path = dir(QStringLiteral("overlapping"));
+        const QString dest = dir(QStringLiteral("overlapping-dest"));
+        const QString folder = path + QStringLiteral("/match");
+        const QString child = folder + QStringLiteral("/match.txt");
+        QDir().mkpath(folder);
+        touch(child, 123);
+        FileOps ops;
+        QSignalSpy finished(&ops, &FileOps::finished);
+        QSignalSpy failed(&ops, &FileOps::failed);
+        ops.copy({ child, folder }); // order must not matter
+        ops.paste(dest);
+        QVERIFY(finished.wait(5000));
+        QVERIFY(QFile::exists(dest + QStringLiteral("/match/match.txt")));
+        QVERIFY(!QFile::exists(dest + QStringLiteral("/match.txt")));
+        QCOMPARE(finished.last().at(1).toStringList().size(), 1);
+        ops.cut({ folder, child });
+        ops.paste(dest);
+        QVERIFY(finished.wait(5000));
+        QCOMPARE(failed.size(), 0);
+        QVERIFY(!QFile::exists(folder));
+        ops.undo();
+        QTRY_VERIFY(QFile::exists(child));
+        QVERIFY(ops.trash({ child, folder }));
+        QCOMPARE(failed.size(), 0);
+        ops.undo();
+        QTRY_VERIFY(QFile::exists(child));
+        ops.deleteForever({ folder, child });
+        QVERIFY(finished.wait(5000));
+        QCOMPARE(failed.size(), 0);
+
+        // A selected link does not include its target's contents.
+        QDir().mkpath(folder);
+        touch(child, 123);
+        const QString link = path + QStringLiteral("/alias");
+        QVERIFY(QFile::link(folder, link));
+        ops.copy({ link, link + QStringLiteral("/match.txt") });
+        ops.paste(dest);
+        QVERIFY(finished.wait(5000));
+        QVERIFY(QFileInfo(dest + QStringLiteral("/alias")).isSymLink());
+        QVERIFY(QFile::exists(dest + QStringLiteral("/match.txt")));
     }
 
     void sorting()
@@ -479,6 +868,25 @@ private slots:
         ops.undo();
         QVERIFY(!QFile::exists(path + QStringLiteral("/b (2).zip")));
         QVERIFY(QFile::exists(path + QStringLiteral("/b.zip")));
+    }
+
+    void compressNestedResult()
+    {
+        if (QStandardPaths::findExecutable(QStringLiteral("bsdtar")).isEmpty())
+            QSKIP("bsdtar isn't installed");
+        const QString path = dir(QStringLiteral("compress-nested"));
+        const QString out = dir(QStringLiteral("compress-nested-out"));
+        QDir().mkpath(path + QStringLiteral("/nested"));
+        write(path + QStringLiteral("/report.txt"), "root file");
+        write(path + QStringLiteral("/nested/report.txt"), "nested file");
+        FileOps ops;
+        QSignalSpy finished(&ops, &FileOps::finished);
+        ops.compress({ path + QStringLiteral("/nested/report.txt") }, path);
+        QVERIFY(finished.wait(5000));
+        QCOMPARE(QProcess::execute(QStringLiteral("bsdtar"), { QStringLiteral("-xf"),
+                     path + QStringLiteral("/report.zip"), QStringLiteral("-C"), out }), 0);
+        QCOMPARE(contents(out + QStringLiteral("/nested/report.txt")), QByteArray("nested file"));
+        QVERIFY(!QFile::exists(out + QStringLiteral("/report.txt")));
     }
 
     void extract()

@@ -6,7 +6,8 @@ everything that touches files. The design is in `design/pistachio-file-manager/`
 ## Build and run
 
 Needs Qt 6.9 or newer (`qt6-base`, `qt6-declarative`), CMake, Ninja, and `bsdtar` from libarchive for Compress and Extract here.
-Fonts: Manrope and JetBrains Mono, as for the shell.
+Fonts: Manrope and JetBrains Mono, as for the shell. PDF preview uses Poppler's `pdfinfo` and `pdftoppm`
+(`poppler` on Arch, `poppler-utils` on Debian/Ubuntu); text/images still work without them.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -28,10 +29,12 @@ HEAD's short hash (`git rev-parse --short HEAD`), so it follows the repo; bump t
 |---|---|
 | Arrows, Shift+arrows, Home/End, PageUp/PageDown | move, extend the selection |
 | Enter, double-click | open (folder here, file in its app) |
+| Space | preview one selected file: text, image or PDF; Space / Escape closes |
 | Backspace, Alt+Up | up a folder |
 | Alt+Left / Alt+Right, mouse side buttons | back / forward |
 | Alt+Home | home |
 | Ctrl+L | type a path |
+| Ctrl+, (or the Settings toolbar button) | default applications: common file types and MIME search |
 | Ctrl+F, or just type | search this folder |
 | Escape | clear the search, then the selection |
 | Ctrl+A | select all |
@@ -60,6 +63,35 @@ HEAD's short hash (`git rev-parse --short HEAD`), so it follows the repo; bump t
 | Ctrl+Q | close the window |
 | F1, ? (or the toolbar's keyboard button) | this list of keys, in the app |
 
+Click the search icon to include subfolders (click again for the fast current-folder filter).
+Results show paths relative to the folder being searched. Search matches filenames, ignores case,
+respects Ctrl+H, and does not follow directory symlinks. Escape or the clear button restores the
+root listing; opening another folder resets the scope. Recursive search is unavailable in Trash.
+Results appear when the scan finishes; editing/clearing the query or navigating cancels an older scan.
+Unreadable subfolders are skipped. Result folders are watched for changes; use F5 for new matches
+in other subfolders. No content search or index is used.
+
+Space over the file view opens a read-only preview of one selected file. Text (UTF-8 or Unicode
+with a BOM) is displayed literally, up to the first 128 KiB, with a notice when truncated. Images
+use Qt's installed image formats and fit inside the dialog. Empty files, read errors and unsupported
+formats have explicit messages. PDFs render one page at a time (up to 1600 px), with page count,
+Previous/Next buttons and Left/Right keys. Rendered pages are temporary and removed on page change
+or closing; the source PDF is untouched. Rendering runs in the background, is cancelled on close,
+and has a 10-second limit per helper. Missing Poppler, damaged and password-protected PDFs show
+errors; there is no password prompt. Image/PDF previews zoom from fit to 4× using −/+, the
++/− keys or Ctrl+wheel; drag or scroll to pan. Fit or 0 resets the view. Each newly opened file
+starts fitted; PDF page changes preserve zoom. Large images decode at up to 4096 px per dimension;
+PDF pages retain the 1600 px rendering limit. Audio/video playback and office-document rendering are not included. Space inside search/path inputs still types a space; folders and multiple selections do
+not open an arbitrary preview.
+
+Settings opens with the toolbar's sliders button or Ctrl+comma. Popular MIME types are shown first;
+search by type name or MIME, and enter a full custom MIME when needed. Select a type to read its
+current desktop default through `xdg-mime`, choose a recommended app (or Show all apps), then Apply.
+Selecting/browsing never writes defaults. Apply changes the desktop-wide association without launching
+an app, then queries it again; errors or desktop-specific overrides are reported instead of claiming
+success. Reads and writes are asynchronous with a five-second helper timeout. Closing the popup does
+not cancel an Apply already requested. The panel requires `xdg-mime` from `xdg-utils`.
+
 ## Code
 
 - `src/`: the backend, registered with QML as module `Pistachio.Files`
@@ -72,6 +104,8 @@ HEAD's short hash (`git rev-parse --short HEAD`), so it follows the repo; bump t
   - `Transfer`: the copying and moving behind paste, drop and undo, on a worker thread, with its progress line
   - `Places`: the sidebar's places, bookmarks (the GTK bookmarks file) and devices (removable drives that aren't mounted, from `lsblk`), mounting and
     unmounting them with udiskie, breadcrumbs
+  - `MimeSettings`: asynchronous xdg-mime query/save/readback, catalog and input validation
+  - `Preview`: read-only preview loading, bounded text reads and stale-result cancellation
   - `Format`: "2.4 MB", "Oct 27", "14 items", file kinds
 - `qml/`: the screens; `Theme.qml` holds every colour and size, `Icons.qml` the board's Lucide paths
 - `tests/tst_backend.cpp`: the backend (`ctest --test-dir build`)

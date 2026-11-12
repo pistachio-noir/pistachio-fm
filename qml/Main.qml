@@ -182,7 +182,7 @@ Controls.ApplicationWindow {
         if (paths.length !== 1 || inTrash)
             return;
         const path = paths[0];
-        const dir = folderModel.path;
+        const dir = path.slice(0, path.lastIndexOf("/")) || "/";
         names.ask({
             title: "Rename “" + nameOf(path) + "”",
             action: "Rename",
@@ -236,6 +236,12 @@ Controls.ApplicationWindow {
         const paths = folderModel.selectedPaths;
         if (paths.length === 1)
             properties.show(paths[0]);
+    }
+
+    function showPreview() {
+        const paths = folderModel.selectedPaths;
+        if (paths.length === 1 && !folderModel.get(folderModel.rowOf(paths[0])).isDir)
+            preview.show(paths[0]);
     }
 
     // an empty file of any name; the name before the extension is selected, so typing keeps ".txt"
@@ -423,6 +429,7 @@ Controls.ApplicationWindow {
                 id: search
                 Layout.preferredWidth: 200
                 folder: folderModel
+                allowRecursive: !window.inTrash
                 onDone: {
                     window.focusFiles();
                     if (folderModel.count > 0 && folderModel.selectedCount === 0)
@@ -450,10 +457,19 @@ Controls.ApplicationWindow {
                 }
 
                 IconButton {
+                    objectName: "keysButton"
                     icon: Icons.keyboard
                     label: "Keyboard shortcuts"
                     restColor: Theme.subtext
                     onClicked: keys.open()
+                }
+
+                IconButton {
+                    objectName: "settingsButton"
+                    icon: Icons.settings
+                    label: "Settings"
+                    restColor: Theme.subtext
+                    onClicked: settings.show()
                 }
             }
         }
@@ -615,13 +631,31 @@ Controls.ApplicationWindow {
         onAboutToHide: window.focusFiles()
     }
 
+    PreviewDialog {
+        id: preview
+        objectName: "preview"
+        onAboutToHide: window.focusFiles()
+    }
+
     OpenWithDialog {
         id: openWith
         objectName: "openWith"
         onAboutToHide: window.focusFiles()
     }
 
+    SettingsDialog {
+        id: settings
+        objectName: "settings"
+        onAboutToHide: window.focusFiles()
+    }
+
+    Shortcut { sequence: "Ctrl+,"; onActivated: settings.show() }
     Shortcut { sequences: [StandardKey.Find]; onActivated: search.focusField() }
+    Shortcut {
+        sequence: "Space"
+        enabled: window.activePane !== null && window.activePane.view.activeFocus
+        onActivated: window.showPreview()
+    }
     Shortcut { sequence: "Ctrl+L"; onActivated: pathBar.edit() }
     Shortcut { sequence: "Ctrl+H"; onActivated: folderModel.showHidden = !folderModel.showHidden }
     Shortcut { sequence: "Ctrl+1"; onActivated: window.setView("grid") }

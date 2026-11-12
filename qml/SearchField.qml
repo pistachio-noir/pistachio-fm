@@ -1,12 +1,14 @@
 import QtQuick
+import QtQuick.Controls.Basic as Controls
 
-// "Search files": narrows the current folder to names containing the text, as you type. Typing
+// "Search files": filters locally; the search icon toggles traversal of subfolders. Typing
 // over the files lands here too (append). Escape clears it; Enter or Down hands the matches to the
 // keyboard (done).
 Rectangle {
     id: root
 
     required property FolderModel folder
+    property bool allowRecursive: true
 
     signal done
 
@@ -33,20 +35,35 @@ Rectangle {
         onClicked: field.forceActiveFocus()
     }
 
-    Icon {
+    IconButton {
         id: glass
-        x: 16
+        objectName: "searchScope"
         anchors.verticalCenter: parent.verticalCenter
-        size: 18
-        paths: Icons.search
-        color: Theme.subtext
+        icon: Icons.search
+        label: root.folder.recursive ? "Search subfolders: on" : "Search subfolders: off"
+        active: root.folder.recursive
+        color: active || scopeHover.hovered ? Theme.overlay2 : Theme.bg
+        restColor: Theme.subtext
+        enabled: root.allowRecursive
+        activeFocusOnTab: true
+        Keys.onSpacePressed: clicked()
+        Keys.onReturnPressed: clicked()
+        Accessible.checkable: true
+        Accessible.checked: root.folder.recursive
+        onClicked: {
+            root.folder.recursive = !root.folder.recursive;
+            field.forceActiveFocus();
+        }
+        Controls.ToolTip.visible: scopeHover.hovered
+        Controls.ToolTip.text: label + " · Click to change"
+        HoverHandler { id: scopeHover }
     }
 
     TextInput {
         id: field
 
         anchors.left: glass.right
-        anchors.leftMargin: 10
+        anchors.leftMargin: 0
         anchors.right: clear.visible ? clear.left : parent.right
         anchors.rightMargin: clear.visible ? 4 : 16
         anchors.verticalCenter: parent.verticalCenter
@@ -69,7 +86,7 @@ Rectangle {
 
         Text {
             visible: !field.text
-            text: "Search files"
+            text: root.folder.recursive ? "Search subfolders" : "Search files"
             textFormat: Text.PlainText
             color: Theme.subtext
             font: field.font
