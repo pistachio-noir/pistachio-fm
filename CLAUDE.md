@@ -130,3 +130,5 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   the default itself (`Apps::openFiles`, the same launcher as Open with).
 - `FolderModel` keys selection by path, so reloads keep it; small changes are applied as row inserts and removes
   (no reset), so the views keep their scroll position.
+
+Shared colours (18 November 2026, owner’s call): follows `~/.config/pistachio/shared-theme` (`pistachio` or `noir`) live, including atomic replacements. Respects XDG_CONFIG_HOME; missing or invalid files use Pistachio Noir. The shell publishes the selection.

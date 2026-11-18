@@ -242,6 +242,13 @@ int main(int argc, char *argv[])
 
     // 1. the grid, as on browse-grid.html
     save(window, out + QStringLiteral("/grid.png"));
+    QDir().mkpath(home + "/.config/pistachio");
+    QTest::qWait(100);
+    { QFile file(home + "/.config/pistachio/shared-theme"); check(file.open(QIODevice::WriteOnly), "open theme file"); file.write("noir\n"); }
+    check(waitFor([&] { return window->color() == QColor("#1A1A1A"); }), "Noir applies live");
+    save(window, out + QStringLiteral("/noir.png"));
+    { QFile file(home + "/.config/pistachio/shared-theme"); check(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "open theme file"); file.write("pistachio\n"); }
+    check(waitFor([&] { return window->color() == QColor("#1D2016"); }), "Pistachio applies live");
 
     // the mouse on the grid (four columns of 174.5 px tiles from x 212, rows of 108 from y 76)
     const QPoint firstTile(299, 130);

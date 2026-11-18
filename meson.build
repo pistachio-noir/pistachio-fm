@@ -10,7 +10,7 @@ qt_test = dependency('qt6', modules: ['Test'])
 python = import('python').find_installation()
 inc = include_directories('src')
 headers = files('src/FolderModel.h', 'src/FileOps.h', 'src/Places.h', 'src/Apps.h',
-                'src/MimeSettings.h', 'src/Preview.h')
+                'src/MimeSettings.h', 'src/Preview.h', 'src/SharedTheme.h')
 moc = qt.preprocess(moc_headers: headers, dependencies: qt_dep)
 resources = qt.preprocess(qresources: 'meson/qml.qrc')
 backend = static_library('pfm',

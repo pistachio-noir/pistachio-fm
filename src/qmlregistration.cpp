@@ -1,4 +1,5 @@
 #include "Apps.h"
+#include "SharedTheme.h"
 #include "FileOps.h"
 #include "FolderModel.h"
 #include "MimeSettings.h"
@@ -16,6 +17,7 @@ static void registerTypes()
     qmlRegisterTypesAndRevisions<MimeSettings>("Pistachio.Files", 1);
     qmlRegisterTypesAndRevisions<Places>("Pistachio.Files", 1);
     qmlRegisterTypesAndRevisions<Preview>("Pistachio.Files", 1);
+    qmlRegisterTypesAndRevisions<SharedTheme>("Pistachio.Files", 1);
     qmlRegisterModule("Pistachio.Files", 1, 0);
 }
 
