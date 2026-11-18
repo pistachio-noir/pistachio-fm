@@ -3,11 +3,9 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QUrl>
-#include <QtQml/QQmlExtensionPlugin>
 
 #include "version.h"
 
-Q_IMPORT_QML_PLUGIN(Pistachio_FilesPlugin)
 
 int main(int argc, char *argv[])
 {

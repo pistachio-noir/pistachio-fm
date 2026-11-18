@@ -12,10 +12,14 @@ Controls.Popup {
     property int current: -1
 
     // window coordinates; the menu stays inside the window
-    function openAt(px: real, py: real) {
+    function openAt(px: real, py: real, above = false) {
         current = -1;
+        viewport.contentY = 0;
+        content.forceLayout();
+        if (above)
+            py -= height + 8;
         x = Math.max(8, Math.min(px, parent.width - width - 8));
-        y = Math.max(8, Math.min(py, parent.height - implicitHeight - 8));
+        y = Math.max(8, Math.min(py, parent.height - height - 8));
         open();
     }
 
@@ -25,6 +29,8 @@ Controls.Popup {
             next = (next + by + entries.length) % entries.length;
             if (!entries[next].separator) {
                 current = next;
+                const item = repeater.itemAt(next);
+                viewport.contentY = Math.max(0, Math.min(item.y, Math.max(viewport.contentY, item.y + item.height - viewport.height)));
                 return;
             }
         }
@@ -40,6 +46,7 @@ Controls.Popup {
 
     parent: Controls.Overlay.overlay
     width: 228
+    height: Math.min(implicitHeight, parent.height - 16)
     padding: 8
     focus: true
     closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
@@ -69,31 +76,43 @@ Controls.Popup {
         }
     }
 
-    contentItem: Column {
-        focus: true // the popup's focus passes down to the keys here
-        Keys.onUpPressed: root.step(-1)
-        Keys.onDownPressed: root.step(1)
-        Keys.onReturnPressed: root.trigger(root.current)
-        Keys.onEnterPressed: root.trigger(root.current)
+    contentItem: Flickable {
+        id: viewport
+        implicitHeight: content.implicitHeight
+        contentHeight: content.height
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        Controls.ScrollBar.vertical: ThinScrollBar {}
 
-        Repeater {
-            model: root.entries
+        Column {
+            id: content
+            width: viewport.width
+            focus: true // the popup's focus passes down to the keys here
+            Keys.onUpPressed: root.step(-1)
+            Keys.onDownPressed: root.step(1)
+            Keys.onReturnPressed: root.trigger(root.current)
+            Keys.onEnterPressed: root.trigger(root.current)
 
-            MenuEntry {
-                id: entry
+            Repeater {
+                id: repeater
+                model: root.entries
 
-                required property var modelData
-                required property int index
+                MenuEntry {
+                    id: entry
 
-                width: parent.width
-                text: entry.modelData.text ?? ""
-                icon: entry.modelData.icon ?? []
-                danger: entry.modelData.danger ?? false
-                separator: entry.modelData.separator ?? false
-                checked: entry.modelData.checked ?? false
-                highlighted: entry.index === root.current
-                onHovered: root.current = entry.index
-                onTriggered: root.trigger(entry.index)
+                    required property var modelData
+                    required property int index
+
+                    width: parent.width
+                    text: entry.modelData.text ?? ""
+                    icon: entry.modelData.icon ?? []
+                    danger: entry.modelData.danger ?? false
+                    separator: entry.modelData.separator ?? false
+                    checked: entry.modelData.checked ?? false
+                    highlighted: entry.index === root.current
+                    onHovered: root.current = entry.index
+                    onTriggered: root.trigger(entry.index)
+                }
             }
         }
     }

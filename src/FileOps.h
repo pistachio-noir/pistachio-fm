@@ -48,6 +48,7 @@ public:
     // why `name` can't be used for a new entry in `dir` ("" if it can); `except` is the entry being renamed
     Q_INVOKABLE QString checkName(const QString &dir, const QString &name, const QString &except = {}) const;
     Q_INVOKABLE QString rename(const QString &path, const QString &name);
+    Q_INVOKABLE QString renameMany(const QStringList &paths, const QString &find, const QString &replacement);
     Q_INVOKABLE QString makeFolder(const QString &dir, const QString &name);
     Q_INVOKABLE QString makeFile(const QString &dir, const QString &name); // empty, any name or extension
 
@@ -81,6 +82,7 @@ public:
     Q_INVOKABLE QVariantMap properties(const QString &path) const;
     // adds up a folder's files in the background, for measured()
     Q_INVOKABLE void measure(const QString &path);
+    Q_INVOKABLE void measureSelection(const QStringList &paths, int request);
 
     // "~/Documents/thesis-draft.pdf"
     Q_INVOKABLE QString displayPath(const QString &path) const;
@@ -94,6 +96,7 @@ signals:
     void finished(const QString &job, const QStringList &paths);
     void failed(const QString &message);
     void notice(const QString &message); // "Undid rename", for the status bar
+    void selectionMeasured(int request, const QString &size);
     void measured(const QString &path, const QString &size); // "340 MB · 1,234 files"
 
 private:

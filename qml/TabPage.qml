@@ -11,6 +11,7 @@ Item {
     property string mode: "grid"
     property bool split
     property int currentPane // 0 the first, 1 the second
+    property real splitRatio: 0.5
     property string dropSide // "left" or "right" while a tab is dragged there: where it would land
 
     readonly property Pane activePane: split && currentPane === 1 && second.item ? second.item as Pane : first
@@ -24,8 +25,29 @@ Item {
     signal openInTab(string path)
     signal failed(string message)
 
+    onWidthChanged: {
+        const available = Math.max(1, width - 25);
+        const minimum = Math.min(160, available / 2) / available;
+        splitRatio = Math.max(minimum, Math.min(1 - minimum, splitRatio));
+    }
+
     function nameOf(path: string): string {
         return path === "/" ? "System" : path.slice(path.lastIndexOf("/") + 1);
+    }
+
+    function snapshot() {
+        return { left: first.folder.path, right: split && second.item ? second.item.folder.path : "",
+                 current: currentPane, ratio: splitRatio };
+    }
+
+    function restore(state) {
+        if (state.right !== "") {
+            splitRatio = state.ratio ?? 0.5;
+            split = true;
+            if (second.item)
+                second.item.folder.go(state.right);
+            currentPane = state.current;
+        }
     }
 
     // a second pane on the same folder; again, back to one: the pane you're in
@@ -53,7 +75,7 @@ Item {
     Pane {
         id: first
 
-        width: root.split ? (root.width - 25) / 2 : root.width
+        width: root.split ? Math.max(0, root.width - 25) * root.splitRatio : root.width
         height: root.height
         start: root.start
         split: root.split
@@ -69,11 +91,37 @@ Item {
     }
 
     Rectangle {
+        id: dividerLine
         visible: root.split
         x: first.width + 12
         width: 1
         height: root.height - 16
-        color: Theme.overlay2
+        color: divider.containsMouse || divider.activeFocus ? Theme.subtext : Theme.overlay2
+        Behavior on color { ColorAnimation { duration: Theme.hoverDuration; easing.type: Theme.easing } }
+
+        MouseArea {
+            id: divider
+            objectName: "splitDivider"
+            x: -12
+            width: 25
+            height: parent.height
+            hoverEnabled: true
+            cursorShape: Qt.SplitHCursor
+            activeFocusOnTab: true
+            Accessible.name: "Resize split panes"
+            function adjust(position) {
+                const available = Math.max(1, root.width - 25);
+                const minimum = Math.min(160, available / 2);
+                root.splitRatio = Math.max(minimum / available, Math.min(1 - minimum / available, position / available));
+            }
+            onPressed: forceActiveFocus()
+            onPositionChanged: event => {
+                if (pressed)
+                    adjust(mapToItem(root, event.x, event.y).x - 12.5);
+            }
+            Keys.onLeftPressed: adjust(first.width - 20)
+            Keys.onRightPressed: adjust(first.width + 20)
+        }
     }
 
     Loader {
@@ -81,7 +129,7 @@ Item {
 
         active: root.split
         x: first.width + 25
-        width: first.width
+        width: Math.max(0, root.width - x)
         height: root.height
         sourceComponent: Pane {
             start: first.folder.path

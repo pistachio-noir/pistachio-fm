@@ -16,6 +16,7 @@
 #include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
+#include <QSysInfo>
 #include <QUrl>
 
 #include <algorithm>
@@ -288,6 +289,16 @@ Apps *Apps::create(QQmlEngine *engine, QJSEngine *)
     engine->addImageProvider(QStringLiteral("appicon"), new IconProvider);
     engine->addImageProvider(QStringLiteral("thumbnail"), new ThumbnailProvider);
     return new Apps(nullptr);
+}
+
+QVariantMap Apps::buildInfo() const
+{
+    return { { QStringLiteral("compiler"), QStringLiteral("Clang ") + QString::fromLatin1(__clang_version__) },
+             { QStringLiteral("qt"), QString::fromLatin1(qVersion()) },
+             { QStringLiteral("meson"), QStringLiteral(PFM_MESON_VERSION) },
+             { QStringLiteral("system"), QSysInfo::prettyProductName() },
+             { QStringLiteral("kernel"), QSysInfo::kernelType() + u' ' + QSysInfo::kernelVersion() },
+             { QStringLiteral("architecture"), QSysInfo::currentCpuArchitecture() } };
 }
 
 QVariantMap Apps::forFile(const QString &path) const

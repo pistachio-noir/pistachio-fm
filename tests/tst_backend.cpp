@@ -427,9 +427,35 @@ private slots:
         QCOMPARE(model.data(model.index(2), FolderModel::KindRole).toString(), QStringLiteral("document"));
         QCOMPARE(model.data(model.index(2), FolderModel::SizeTextRole).toString(), QStringLiteral("2.4 MB"));
         QCOMPARE(model.data(model.index(2), FolderModel::DetailRole).toString(), QStringLiteral("2.4 MB · Today"));
+        QVERIFY(model.setProperty("reverseSort", true));
+        QCOMPARE(names(model), (QStringList { "Projects", "notes", "file10.txt", "file2.txt", "Apple.md" }));
+        QVERIFY(model.setProperty("reverseSort", false));
         // the folders' item counts come a moment later
         QTRY_COMPARE(model.data(model.index(1), FolderModel::DetailRole).toString(), QStringLiteral("2 items"));
         QTRY_COMPARE(model.data(model.index(0), FolderModel::SizeTextRole).toString(), QStringLiteral("0 items"));
+    }
+
+    void pathCompletion()
+    {
+        const QString path = dir(QStringLiteral("completion"));
+        QDir().mkpath(path + QStringLiteral("/Projects"));
+        QDir().mkpath(path + QStringLiteral("/Photos"));
+        touch(path + QStringLiteral("/Prose.txt"));
+        FolderModel model;
+        QVERIFY(model.go(path));
+        QCOMPARE(model.completePath(QStringLiteral("Pro")), QStringLiteral("Projects/"));
+        QCOMPARE(model.completePath(QStringLiteral("P")), QStringLiteral("P"));
+        QCOMPARE(model.completePath(path + QStringLiteral("/Pho")), path + QStringLiteral("/Photos/"));
+        QCOMPARE(model.completePath(QStringLiteral("missing")), QStringLiteral("missing"));
+    }
+
+    void buildInformation()
+    {
+        Apps apps(nullptr);
+        const QVariantMap info = apps.buildInfo();
+        QVERIFY(info.value(QStringLiteral("compiler")).toString().contains(QStringLiteral("Clang")));
+        QCOMPARE(info.value(QStringLiteral("qt")).toString(), QString::fromLatin1(qVersion()));
+        QVERIFY(!info.value(QStringLiteral("system")).toString().isEmpty());
     }
 
     void missingFolder()
@@ -713,6 +739,52 @@ private slots:
         // the folder itself goes away: the model moves up to what's still there
         QDir(path).removeRecursively();
         QTRY_COMPARE(model.path(), m_home);
+    }
+
+    void batchRename()
+    {
+        const QString path = dir(QStringLiteral("batch-rename"));
+        const QString a = path + QStringLiteral("/old-a.txt");
+        const QString b = path + QStringLiteral("/old-b.txt");
+        touch(a, 11);
+        touch(b, 22);
+        FileOps ops;
+        const QStringList files = { a, b };
+        QVERIFY(!ops.renameMany(files, QString(), QStringLiteral("new")).isEmpty());
+        touch(path + QStringLiteral("/new-b.txt"), 33);
+        QVERIFY(!ops.renameMany(files, QStringLiteral("old"), QStringLiteral("new")).isEmpty());
+        QCOMPARE(QFileInfo(a).size(), 11);
+        QCOMPARE(QFileInfo(b).size(), 22);
+        QCOMPARE(QFileInfo(path + QStringLiteral("/new-b.txt")).size(), 33);
+        QVERIFY(QFile::remove(path + QStringLiteral("/new-b.txt")));
+        QCOMPARE(ops.renameMany(files, QStringLiteral("old"), QStringLiteral("new")), QString());
+        QCOMPARE(QFileInfo(path + QStringLiteral("/new-a.txt")).size(), 11);
+        QCOMPARE(QFileInfo(path + QStringLiteral("/new-b.txt")).size(), 22);
+        ops.undo();
+        QCOMPARE(QFileInfo(a).size(), 11);
+        QCOMPARE(QFileInfo(b).size(), 22);
+    }
+
+    void batchRenameUndoConflict()
+    {
+        const QString path = dir(QStringLiteral("batch-undo-conflict"));
+        const QString a = path + QStringLiteral("/old-a.txt");
+        const QString b = path + QStringLiteral("/old-b.txt");
+        touch(a, 11);
+        touch(b, 22);
+        FileOps ops;
+        QCOMPARE(ops.renameMany({ a, b }, QStringLiteral("old"), QStringLiteral("new")), QString());
+        touch(a, 99);
+        QSignalSpy failed(&ops, &FileOps::failed);
+        ops.undo();
+        QCOMPARE(failed.size(), 1);
+        QCOMPARE(QFileInfo(a).size(), 99);
+        QCOMPARE(QFileInfo(path + QStringLiteral("/new-a.txt")).size(), 11);
+        QCOMPARE(QFileInfo(path + QStringLiteral("/new-b.txt")).size(), 22);
+        QVERIFY(QFile::remove(a));
+        ops.undo();
+        QCOMPARE(QFileInfo(a).size(), 11);
+        QCOMPARE(QFileInfo(b).size(), 22);
     }
 
     void renameAndMakeFolder()
@@ -1236,6 +1308,22 @@ private slots:
         QVERIFY(!ops.canUndo());
     }
 
+    void selectionPropertiesSize()
+    {
+        const QString path = dir(QStringLiteral("selection-properties"));
+        QDir().mkpath(path + QStringLiteral("/folder"));
+        touch(path + QStringLiteral("/folder/a"), 7);
+        touch(path + QStringLiteral("/other"), 11);
+        FileOps ops;
+        QSignalSpy measured(&ops, SIGNAL(selectionMeasured(int,QString)));
+        QVERIFY(measured.isValid());
+        const QStringList selected = { path + QStringLiteral("/folder"), path + QStringLiteral("/folder/a"), path + QStringLiteral("/other") };
+        QVERIFY(QMetaObject::invokeMethod(&ops, "measureSelection", Q_ARG(QStringList, selected), Q_ARG(int, 42)));
+        QVERIFY(measured.wait(5000));
+        QCOMPARE(measured.first().at(0).toInt(), 42);
+        QCOMPARE(measured.first().at(1).toString(), QStringLiteral("18 B · 2 files"));
+    }
+
     void properties()
     {
         const QString path = dir(QStringLiteral("props"));
@@ -1314,6 +1402,21 @@ private slots:
         QVERIFY(ops.progress().isEmpty());
         QDir(from).removeRecursively();
         QDir(to).removeRecursively();
+    }
+
+    void cancelledSurvey()
+    {
+        const QString path = dir(QStringLiteral("cancelled-survey"));
+        touch(path + QStringLiteral("/file.txt"), 10);
+        Transfer::Progress progress;
+        std::atomic<bool> stop = true;
+        Transfer::survey(path, progress, &stop);
+        QCOMPARE(progress.totalFiles, 0);
+        QCOMPARE(progress.totalBytes, 0);
+        stop = false;
+        Transfer::survey(path, progress, &stop);
+        QCOMPARE(progress.totalFiles, 1);
+        QCOMPARE(progress.totalBytes, 10);
     }
 
     void stopPaste()

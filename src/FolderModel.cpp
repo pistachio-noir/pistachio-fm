@@ -233,6 +233,15 @@ void FolderModel::setSortKey(SortKey key)
     rebuild();
 }
 
+void FolderModel::setReverseSort(bool reverse)
+{
+    if (m_reverseSort == reverse)
+        return;
+    m_reverseSort = reverse;
+    emit reverseSortChanged();
+    rebuild();
+}
+
 qint64 FolderModel::selectedSize() const
 {
     qint64 total = 0;
@@ -286,6 +295,37 @@ QString FolderModel::resolve(const QString &where) const
     if (!path.startsWith(u'/'))
         path = childPrefix(m_path.isEmpty() ? QDir::homePath() : m_path) + path;
     return QDir::cleanPath(path);
+}
+
+QString FolderModel::completePath(const QString &input) const
+{
+    if (input == QLatin1String("~"))
+        return QStringLiteral("~/");
+    const qsizetype slash = input.lastIndexOf(u'/');
+    const QString head = slash < 0 ? QString() : input.left(slash + 1);
+    const QString prefix = input.mid(slash + 1);
+    const QString directory = head.isEmpty() ? m_path : resolve(head);
+    if (directory.isEmpty())
+        return input;
+    QDir::Filters filters = QDir::Dirs | QDir::NoDotAndDotDot;
+    if (prefix.startsWith(u'.'))
+        filters |= QDir::Hidden;
+    const QStringList names = QDir(directory).entryList(filters, QDir::Name);
+    QStringList matches;
+    for (const QString &name : names) {
+        if (name.startsWith(prefix))
+            matches.append(name);
+    }
+    if (matches.isEmpty())
+        return input;
+    QString common = matches.first();
+    for (const QString &name : matches) {
+        qsizetype length = 0;
+        while (length < common.size() && length < name.size() && common[length] == name[length])
+            ++length;
+        common.truncate(length);
+    }
+    return head + common + (matches.size() == 1 ? QStringLiteral("/") : QString());
 }
 
 bool FolderModel::go(const QString &where)
@@ -568,7 +608,9 @@ void FolderModel::rebuild()
         rows.append(entry);
     }
     std::stable_sort(rows.begin(), rows.end(), [this](const FileEntry &a, const FileEntry &b) {
-        return lessThan(a, b);
+        if (a.isDir != b.isDir)
+            return a.isDir;
+        return m_reverseSort ? lessThan(b, a) : lessThan(a, b);
     });
     applyRows(std::move(rows));
     m_total = total;

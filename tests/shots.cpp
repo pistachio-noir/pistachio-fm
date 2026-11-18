@@ -26,9 +26,7 @@
 #include <QMimeData>
 #include <QUrl>
 #include <QTest>
-#include <QtQml/QQmlExtensionPlugin>
 
-Q_IMPORT_QML_PLUGIN(Pistachio_FilesPlugin)
 
 namespace {
 
@@ -302,6 +300,104 @@ int main(int argc, char *argv[])
     }
     QFile::remove(searchFile);
 
+    // The first menu opening must fit even before its entries have been laid out.
+    folder->selectPaths({ docs + QStringLiteral("/thesis-draft.pdf") });
+    QObject *fileMenu = nullptr;
+    for (QObject *object : window->findChildren<QObject *>()) {
+        if (object->property("entries").isValid() && object->property("current").isValid()) {
+            fileMenu = object;
+            break;
+        }
+    }
+    QMetaObject::invokeMethod(window, "openMenuAt", Q_ARG(double, 940), Q_ARG(double, 580));
+    QTest::qWait(250);
+    check(fileMenu && fileMenu->property("y").toReal() + fileMenu->property("height").toReal() <= window->height() - 8,
+          "the first context menu fits inside the window");
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::qWait(250);
+
+    QMetaObject::invokeMethod(window, "openSortMenu", Q_ARG(QPointF, QPointF(700, 550)));
+    QTest::qWait(250);
+    for (int i = 0; i < 5; ++i)
+        QTest::keyClick(window, Qt::Key_Down);
+    QTest::keyClick(window, Qt::Key_Return);
+    check(folder->property("reverseSort").toBool(), "the sort menu enables reverse order");
+    folder->setProperty("reverseSort", false);
+    QTest::qWait(250);
+
+    window->resize(960, 400);
+    QTest::qWait(100);
+    folder->selectPaths({ docs + QStringLiteral("/Notes") });
+    QMetaObject::invokeMethod(window, "openMenuAt", Q_ARG(double, 940), Q_ARG(double, 380));
+    QTest::qWait(250);
+    check(fileMenu && fileMenu->property("y").toReal() + fileMenu->property("height").toReal() <= window->height() - 8,
+          "a folder context menu fits in a short window");
+    QTest::keyClick(window, Qt::Key_Up);
+    auto *menuViewport = fileMenu ? fileMenu->property("contentItem").value<QQuickItem *>() : nullptr;
+    check(menuViewport && menuViewport->property("contentY").toReal() > 0,
+          "keyboard navigation scrolls to the last menu entry");
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::qWait(250);
+    window->resize(960, 600);
+    QTest::qWait(100);
+
+    const QString breadcrumbSource = docs + QStringLiteral("/Notes/pfm-breadcrumb-drop.txt");
+    const QString breadcrumbTarget = home + QStringLiteral("/pfm-breadcrumb-drop.txt");
+    makeFile(breadcrumbSource, 3, QDateTime::currentDateTime());
+    QQuickItem *homeCrumb = nullptr;
+    QList<QQuickItem *> crumbItems = { window->contentItem() };
+    while (!crumbItems.isEmpty() && !homeCrumb) {
+        QQuickItem *item = crumbItems.takeFirst();
+        if (item->objectName() == QStringLiteral("breadcrumb:") + home)
+            homeCrumb = item;
+        crumbItems.append(item->childItems());
+    }
+    if (check(homeCrumb != nullptr, "the Home breadcrumb accepts file drops")) {
+        const QPointF at = homeCrumb->mapToScene(QPointF(homeCrumb->width() / 2, homeCrumb->height() / 2));
+        QMimeData data;
+        data.setUrls({ QUrl::fromLocalFile(breadcrumbSource) });
+        QDragEnterEvent enter(at, Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
+        QCoreApplication::sendEvent(window, &enter);
+        QDragMoveEvent move(at, Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
+        QCoreApplication::sendEvent(window, &move);
+        QDropEvent drop(at, Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
+        QCoreApplication::sendEvent(window, &drop);
+        check(waitFor([&] { return QFile::exists(breadcrumbTarget); }), "dropping on a breadcrumb moves the file there");
+    }
+    QFile::remove(breadcrumbSource);
+    QFile::remove(breadcrumbTarget);
+
+    folder->clearSelection();
+    QMetaObject::invokeMethod(window, "showProperties");
+    auto *folderProperties = window->findChild<QObject *>(QStringLiteral("properties"));
+    check(folderProperties && waitFor([&] { return folderProperties->property("opened").toBool(); })
+              && folderProperties->property("path").toString() == docs,
+          "Properties without a selection shows the current folder");
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::qWait(250);
+
+    QTest::keyClick(window, Qt::Key_L, Qt::ControlModifier);
+    auto *pathInput = window->activeFocusItem();
+    if (check(pathInput && pathInput->property("text").isValid(), "Ctrl+L focuses the path field")) {
+        pathInput->setProperty("text", docs + QStringLiteral("/No"));
+        QTest::keyClick(window, Qt::Key_End);
+        QTest::keyClick(window, Qt::Key_Tab);
+        check(pathInput->property("text").toString() == docs + QStringLiteral("/Notes/"),
+              "Tab completes a folder in the path field");
+        QTest::keyClick(window, Qt::Key_Escape);
+    }
+    QTest::qWait(250);
+
+    auto *versionButton = window->findChild<QQuickItem *>(QStringLiteral("versionButton"));
+    if (check(versionButton != nullptr, "the version is an About button")) {
+        QTest::mouseClick(window, Qt::LeftButton, {}, versionButton->mapToScene(QPointF(versionButton->width() / 2, versionButton->height() / 2)).toPoint());
+        auto *about = window->findChild<QObject *>(QStringLiteral("aboutDialog"));
+        check(about && waitFor([&] { return about->property("opened").toBool(); }), "clicking the version opens About");
+        save(window, out + QStringLiteral("/about.png"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTest::qWait(250);
+    }
+
     // 2. the list with the menu, as on list-context-menu.html
     folder->selectPaths({ docs + QStringLiteral("/thesis-draft.pdf") });
     QMetaObject::invokeMethod(window, "setView", Q_ARG(QString, QStringLiteral("list")));
@@ -549,12 +645,52 @@ int main(int argc, char *argv[])
     QTest::keyClick(window, Qt::Key_Tab, Qt::ControlModifier);
     check(waitFor([&] { return current() == notes; }), "…and the second is still in Notes");
 
+    QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+    check(waitFor([&] { return tabCount() == 1 && current() == docs; }), "closing a tab returns to the previous tab");
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier | Qt::ShiftModifier);
+    check(waitFor([&] { return tabCount() == 2 && current() == notes; }), "Ctrl+Shift+T reopens the closed tab");
+
+    for (int i = 0; i < 12; ++i)
+        QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier);
+    check(waitFor([&] { return tabCount() == 14; }), "many tabs can be opened");
+    check(waitFor([&] { const QPoint lastTab = tabAt(window, 13);
+                         return lastTab.x() >= 0 && lastTab.x() < window->width(); }),
+          "the active tab stays visible when tabs overflow");
+    for (int i = 0; i < 12; ++i)
+        QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+    check(waitFor([&] { return tabCount() == 2 && current() == notes; }), "overflow tabs can be closed");
+
     QTest::keyClick(window, Qt::Key_F3);
     check(waitFor([&] { return page()->property("split").toBool() && page()->property("currentPane").toInt() == 1 && current() == notes; }),
           "F3 splits the tab, the new pane on the same folder");
     QMetaObject::invokeMethod(window->property("folder").value<QObject *>(), "go", Q_ARG(QString, docs));
     check(waitFor([&] { return page()->property("title").toString() == QStringLiteral("Notes · Documents"); }),
           "each pane goes its own way, and the tab says both");
+    QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+    QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier | Qt::ShiftModifier);
+    check(waitFor([&] { return tabCount() == 2 && page()->property("split").toBool()
+                              && page()->property("title").toString() == QStringLiteral("Notes · Documents")
+                              && page()->property("currentPane").toInt() == 1; }),
+          "reopening a split tab restores both folders and the focused pane");
+    auto *divider = page()->findChild<QQuickItem *>(QStringLiteral("splitDivider"));
+    if (check(divider != nullptr, "split view has a draggable divider")) {
+        const QPoint center = divider->mapToScene(QPointF(divider->width() / 2, divider->height() / 2)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, {}, center);
+        QTest::mouseMove(window, center + QPoint(100, 0));
+        QTest::mouseRelease(window, Qt::LeftButton, {}, center + QPoint(100, 0));
+        check(page()->property("splitRatio").toReal() > 0.6, "dragging the divider resizes both panes");
+        const qreal savedRatio = page()->property("splitRatio").toReal();
+        QTest::keyClick(window, Qt::Key_W, Qt::ControlModifier);
+        QTest::keyClick(window, Qt::Key_T, Qt::ControlModifier | Qt::ShiftModifier);
+        check(waitFor([&] { return page()->property("split").toBool()
+                                  && qAbs(page()->property("splitRatio").toReal() - savedRatio) < 0.01; }),
+              "reopening a split tab restores the pane sizes");
+        divider = page()->findChild<QQuickItem *>(QStringLiteral("splitDivider"));
+        const QPoint changed = divider->mapToScene(QPointF(divider->width() / 2, divider->height() / 2)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, {}, changed);
+        QTest::mouseMove(window, center);
+        QTest::mouseRelease(window, Qt::LeftButton, {}, center);
+    }
     save(window, out + QStringLiteral("/tabs-split.png"));
     QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(300, 210)); // a tile in the first pane
     check(waitFor([&] { return page()->property("currentPane").toInt() == 0 && current() == notes; }),
@@ -932,6 +1068,55 @@ int main(int argc, char *argv[])
         save(window, out + QStringLiteral("/settings-search.png"));
         QTest::keyClick(window, Qt::Key_Escape);
         check(waitFor([&] { return !settings->property("visible").toBool(); }), "Escape closes Settings");
+    }
+
+    QTest::qWait(300);
+    const QString batchDir = home + QStringLiteral("/batch-test");
+    QDir().mkpath(batchDir);
+    makeFile(batchDir + QStringLiteral("/old-a.txt"), 11, QDateTime::currentDateTime());
+    makeFile(batchDir + QStringLiteral("/old-b.txt"), 22, QDateTime::currentDateTime());
+    auto *activeFolder = window->property("folder").value<FolderModel *>();
+    activeFolder->go(batchDir);
+    check(waitFor([&] { return !activeFolder->loading() && activeFolder->count() == 2; }), "batch rename fixture opens");
+    activeFolder->selectPaths({ batchDir + QStringLiteral("/old-a.txt"), batchDir + QStringLiteral("/old-b.txt") });
+    QTest::keyClick(window, Qt::Key_Return, Qt::AltModifier);
+    auto *selectedProperties = window->findChild<QObject *>(QStringLiteral("properties"));
+    check(selectedProperties && waitFor([&] { return selectedProperties->property("opened").toBool()
+                                                      && selectedProperties->property("size").toString() == QStringLiteral("33 B · 2 files"); }),
+          "Properties counts the selected files together");
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::qWait(250);
+    QTest::keyClick(window, Qt::Key_F2);
+    QObject *batch = window->findChild<QObject *>(QStringLiteral("batchRename"));
+    if (check(batch && waitFor([&] { return batch->property("opened").toBool(); }), "F2 opens batch rename for multiple files")) {
+        for (const char key : QByteArray("old"))
+            QTest::keyClick(window, key);
+        QTest::keyClick(window, Qt::Key_Tab);
+        for (const char key : QByteArray("new"))
+            QTest::keyClick(window, key);
+        save(window, out + QStringLiteral("/batch-rename.png"));
+        window->resize(960, 400);
+        QTest::qWait(100);
+        makeFile(batchDir + QStringLiteral("/new-b.txt"), 33, QDateTime::currentDateTime());
+        QTest::keyClick(window, Qt::Key_Return);
+        check(waitFor([&] { return !batch->property("error").toString().isEmpty(); })
+                  && QFileInfo(batchDir + QStringLiteral("/new-b.txt")).size() == 33
+                  && QFile::exists(batchDir + QStringLiteral("/old-a.txt")),
+              "batch rename reports conflicts without changing files");
+        check(batch->property("y").toReal() >= 0
+                  && batch->property("y").toReal() + batch->property("height").toReal() <= window->height(),
+              "the batch rename dialog fits a short window");
+        QFile::remove(batchDir + QStringLiteral("/new-b.txt"));
+        QTest::keyClick(window, Qt::Key_Return);
+        check(waitFor([&] { return QFile::exists(batchDir + QStringLiteral("/new-a.txt"))
+                                  && QFile::exists(batchDir + QStringLiteral("/new-b.txt")); }),
+              "batch rename applies the previewed replacements");
+        window->resize(960, 600);
+        QTest::qWait(250);
+        QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+        check(waitFor([&] { return QFile::exists(batchDir + QStringLiteral("/old-a.txt"))
+                                  && QFile::exists(batchDir + QStringLiteral("/old-b.txt")); }),
+              "one Undo restores the batch names");
     }
 
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");

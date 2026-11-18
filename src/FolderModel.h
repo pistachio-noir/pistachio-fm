@@ -43,6 +43,7 @@ class FolderModel : public QAbstractListModel
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
     Q_PROPERTY(bool recursive READ recursive WRITE setRecursive NOTIFY recursiveChanged)
     Q_PROPERTY(SortKey sortKey READ sortKey WRITE setSortKey NOTIFY sortKeyChanged)
+    Q_PROPERTY(bool reverseSort READ reverseSort WRITE setReverseSort NOTIFY reverseSortChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(int totalCount READ totalCount NOTIFY countChanged) // before the search filter
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
@@ -98,6 +99,8 @@ public:
     void setRecursive(bool recursive);
     SortKey sortKey() const { return m_sortKey; }
     void setSortKey(SortKey key);
+    bool reverseSort() const { return m_reverseSort; }
+    void setReverseSort(bool reverse);
     int count() const { return int(m_rows.size()); }
     int totalCount() const { return m_total; }
     bool loading() const { return m_loading; }
@@ -119,6 +122,7 @@ public:
     Q_INVOKABLE void forward();
     Q_INVOKABLE void up();
     Q_INVOKABLE void reload();
+    Q_INVOKABLE QString completePath(const QString &input) const;
 
     Q_INVOKABLE void select(int row, FolderModel::SelectMode mode = Replace);
     Q_INVOKABLE void selectAll();
@@ -134,6 +138,7 @@ signals:
     void filterChanged();
     void recursiveChanged();
     void sortKeyChanged();
+    void reverseSortChanged();
     void countChanged();
     void loadingChanged();
     void errorChanged();
@@ -175,6 +180,7 @@ private:
     QString m_filter;
     QString m_error;
     SortKey m_sortKey = ByName;
+    bool m_reverseSort = false;
     bool m_showHidden = false;
     bool m_recursive = false;
     bool m_loading = false;

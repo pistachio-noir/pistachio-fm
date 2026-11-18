@@ -27,6 +27,7 @@ public:
     // { mime, type: "Markdown document", apps: [{ id, name, icon, isDefault, terminal }] }: the default first, then the
     // apps for the type itself, then for what it's a kind of (text editors for Markdown), each by name.
     // `icon` is "" where the theme has none.
+    Q_INVOKABLE QVariantMap buildInfo() const;
     Q_INVOKABLE QVariantMap forFile(const QString &path) const;
     Q_INVOKABLE QVariantMap forMime(const QString &type) const; // app choices without a sample file
     Q_INVOKABLE QVariantList all() const; // every app a launcher shows, by name

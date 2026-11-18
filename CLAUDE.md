@@ -7,7 +7,7 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
 
 - UI in QML, backend in C++ on Qt 6 (the owner's choice of QML; C++ over Rust because the shell runs on the same
   Qt 6 QML stack and Qt has the file-manager pieces). One static QML module, `Pistachio.Files`, built by
-  `CMakeLists.txt`; the QML files are aliased to the module's root so they see each other and the singletons.
+  `meson.build`; the QML files are aliased to the module's root so they see each other and the singletons.
 - The boards in `design/pistachio-file-manager/html/` are the visual source of truth (sizes, radii, colours).
   Their sample names, sizes and dates are made up.
 - Deliberate departures from the boards: the window opens at 960 x 600 (the board's 516 cuts off Devices); the
@@ -26,8 +26,8 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   has no default; Properties has Opens with + Change. FM starts apps itself from Exec= (terminal apps in
   $TERMINAL or kitty, as the shell's launcher), not through gio.
 - Tabs and split view (owner's choices, 1 Nov; board `tabs-split.html`, drawn by Claude and approved): Dolphin's
-  model, each tab can split in two (F3); the tab row only from two tabs on; Ctrl+W closes the tab, the window with
-  the last; tabs aren't restored on start. Main's `folderModel` is the folder of the pane you're in (`Pane` in a
+  model, each tab can split in two (F3), with a draggable divider; the tab row only from two tabs on; Ctrl+W closes the tab, the window with
+  the last; Ctrl+Shift+T reopens a recently closed tab, including its split folders; tabs aren't restored on start. Main's `folderModel` is the folder of the pane you're in (`Pane` in a
   `TabPage`), so the toolbar, sidebar, menus, dialogs and status line work on it unchanged; the view mode is shared.
   Right-click a tab: Split view / Close split and Close tab; a tab dragged onto the left or right third of the files
   goes in the pane on that side of the tab on show (splitting it) and closes, its pane you were in if it was split;
@@ -39,8 +39,12 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   archive (bsdtar without -P, so nothing lands outside it; undo trashes the folder); Open in terminal on empty
   space; a Stop chip while a paste shows progress; Bookmarks under Places from `~/.config/gtk-3.0/bookmarks`
   (Nautilus' file, re-read on the 4 s poll; only that line changes); a box drag on empty space selects.
-- The version (owner's request 7 Nov, no board): `v1 · <HEAD's short hash>` in subtext at the status bar's right corner,
-  right of the sort chip; `cmake/version.cmake` reads the hash on every build into `build/version.h`.
+- The version (owner's request 7 Nov, no board): `v1 · <HEAD's short hash>` in subtext at the status bar's left corner; clicking it opens About with build and system information. `meson/version.py` reads the hash on every build into `build-meson/version.h`.
+- Properties (18 Nov): Alt+Enter or the menu with multiple selections shows their combined file
+  size and count on a worker; selected descendants of a selected directory are counted only once.
+- Batch rename (owner requested 18 Nov): F2 on multiple selected items opens a find-and-replace
+  preview. The backend validates all names before changing any, refuses existing targets, and records
+  one undo step. Overlapping selected directory trees are rejected; rename collisions never overwrite.
 - Recursive filename search (12 Nov, implementation from CODEX-HANDOFF.md; no new board): clicking the search
   icon toggles subfolder search; typing/Ctrl+F retains the fast local filter by default. Names in results show
   relative paths. No directory symlink traversal; hidden subtrees follow Ctrl+H. Navigation resets the scope;
@@ -78,9 +82,9 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
 
 ## Working rules
 
-1. Build `cmake --build build`; check with `QT_QPA_PLATFORM=offscreen build/tst_backend` and
-   `QT_QPA_PLATFORM=offscreen build/pfm-shots <scratch dir>` (saves the boards' states as PNGs and prints
-   PASS/FAIL), then look at the PNGs next to the boards. `cmake --build build --target all_qmllint` should stay quiet.
+1. Build `meson compile -C build-meson`; check with `QT_QPA_PLATFORM=offscreen build-meson/tst_backend` and
+   `QT_QPA_PLATFORM=offscreen build-meson/pfm-shots <scratch dir>` (saves the boards' states as PNGs and prints
+   PASS/FAIL), then look at the PNGs next to the boards.
 2. `pfm-shots` clicks fixed points of the 960 x 600 layout; move them when the layout changes. Devices lists the
    real drives plugged in (a USB stick moves Trash down, out of view), so it finds sidebar entries by path and
    scrolls to them, and stops if it lands anywhere else: it must never click around on a real drive.
@@ -98,9 +102,8 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   draws past the clip; on Hyprland it's clipped correctly (checked with a minimal scene). Don't work around it in the app.
 - `pfm-shots` points HOME at a temporary folder; fontconfig reads the user's fonts from HOME, so it loads the font
   database before moving HOME, or everything renders in the fallback font.
-- The shell's launcher starts apps with the session's PATH, which lacks `~/.local/bin`, so `cmake --install` writes
-  the app's full path into the installed desktop entry's Exec and TryExec (`data/pistachio-fm.desktop` keeps the
-  bare name). The shell finds only hicolor icons (no Qt platform theme), so the app's own icon
+- The shell's launcher starts apps with the session's PATH, which lacks `~/.local/bin`, so `meson install -C build-meson` writes
+  the app's full path into the installed desktop entry's Exec and TryExec (`data/pistachio-fm.desktop.in` holds the template). The shell finds only hicolor icons (no Qt platform theme), so the app's own icon
   (`data/pistachio-fm.svg`, drawn like pistachio-notes') is installed to hicolor/scalable/apps.
 - Wayland tells only the focused window that the clipboard changed, so `FileOps::paste` reads it again first.
 - A Popup's `focus: true` focuses the popup, not its contentItem: Keys handlers on the content need `focus: true`

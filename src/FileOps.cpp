@@ -186,6 +186,52 @@ QString FileOps::rename(const QString &path, const QString &name)
     return {};
 }
 
+QString FileOps::renameMany(const QStringList &paths, const QString &find, const QString &replacement)
+{
+    if (find.isEmpty())
+        return QStringLiteral("Type text to find");
+    if (paths.isEmpty() || topLevelPaths(paths).size() != paths.size())
+        return QStringLiteral("Choose separate files and folders");
+    QList<std::pair<QString, QString>> moves;
+    QSet<QString> targets;
+    for (const QString &path : paths) {
+        if (!QDir::isAbsolutePath(path) || !present(path))
+            return QStringLiteral("An item is no longer there");
+        QString name = nameOf(path);
+        name.replace(find, replacement, Qt::CaseSensitive);
+        if (name == nameOf(path))
+            continue;
+        const QString problem = checkName(parentOf(path), name, path);
+        if (!problem.isEmpty())
+            return problem;
+        const QString target = join(parentOf(path), name);
+        if (targets.contains(target))
+            return QStringLiteral("Two items would have the same name");
+        targets.insert(target);
+        moves.append({ path, target });
+    }
+    if (moves.isEmpty())
+        return QStringLiteral("No names match");
+    QList<std::pair<QString, QString>> done;
+    for (const auto &entry : std::as_const(moves)) {
+        if (!move(entry.first, entry.second)) {
+            QList<std::pair<QString, QString>> remaining;
+            for (auto it = done.crbegin(); it != done.crend(); ++it) {
+                if (!move(it->second, it->first))
+                    remaining.prepend(*it);
+            }
+            if (!remaining.isEmpty()) {
+                remember({ Step::Renamed, remaining, {} });
+                return QStringLiteral("Couldn't rename everything; some names couldn't be restored. Use Undo to retry.");
+            }
+            return QStringLiteral("Couldn't rename everything; the previous names were restored");
+        }
+        done.append(entry);
+    }
+    remember({ Step::Renamed, done, {} });
+    return {};
+}
+
 QString FileOps::makeFolder(const QString &dir, const QString &name)
 {
     const QString problem = checkName(dir, name);
@@ -529,17 +575,28 @@ void FileOps::undo()
     }
 
     case Step::Renamed: {
-        const auto &[before, after] = step.moves.first();
-        if (present(before)) {
-            emit failed(QStringLiteral("Couldn't undo the rename: something called “%1” is there now").arg(nameOf(before)));
-            break;
+        for (const auto &[before, after] : step.moves) {
+            if (present(before) || !present(after)) {
+                remember(step);
+                emit failed(QStringLiteral("Couldn't undo the rename: an original name is taken or an item is missing"));
+                return;
+            }
         }
-        if (!move(after, before)) {
-            emit failed(QStringLiteral("Couldn't undo the rename"));
-            break;
+        auto remaining = step.moves;
+        while (!remaining.isEmpty()) {
+            const auto [before, after] = remaining.last();
+            if (!move(after, before)) {
+                remember({ Step::Renamed, remaining, {} });
+                emit failed(QStringLiteral("Couldn't undo every rename; use Undo to retry"));
+                return;
+            }
+            remaining.removeLast();
         }
+        QStringList restored;
+        for (const auto &[before, after] : step.moves)
+            restored.append(before);
         emit notice(QStringLiteral("Undid rename"));
-        emit finished(QStringLiteral("undo"), { before });
+        emit finished(QStringLiteral("undo"), restored);
         break;
     }
 
@@ -630,6 +687,24 @@ void FileOps::measure(const QString &path)
         QMetaObject::invokeMethod(QCoreApplication::instance(), [self, path, size] {
             if (self)
                 emit self->measured(path, size);
+        }, Qt::QueuedConnection);
+    });
+}
+
+void FileOps::measureSelection(const QStringList &paths, int request)
+{
+    const QStringList selected = topLevelPaths(paths);
+    const QPointer<FileOps> self(this);
+    QThreadPool::globalInstance()->start([self, selected, request] {
+        Transfer::Progress total;
+        for (const QString &path : selected)
+            Transfer::survey(path, total);
+        const QString files = total.totalFiles == 1 ? QStringLiteral("1 file")
+            : QStringLiteral("%1 files").arg(QLocale(QLocale::English).toString(total.totalFiles));
+        const QString size = Format::size(total.totalBytes) + QStringLiteral(" · ") + files;
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, request, size] {
+            if (self)
+                emit self->selectionMeasured(request, size);
         }, Qt::QueuedConnection);
     });
 }

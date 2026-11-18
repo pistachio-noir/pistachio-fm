@@ -75,13 +75,21 @@ Rectangle {
                     }
 
                     Text {
+                        objectName: "breadcrumb:" + step.modelData.path
                         anchors.verticalCenter: parent.verticalCenter
                         text: step.modelData.name
                         textFormat: Text.PlainText
-                        color: step.last ? Theme.textBright : link.containsMouse ? Theme.text : Theme.subtext
+                        color: step.last || breadcrumbDrop.containsDrag ? Theme.textBright : link.containsMouse ? Theme.text : Theme.subtext
                         font.family: Theme.fontUi
                         font.pixelSize: 13
                         font.weight: Font.Bold
+
+                        FolderDrop {
+                            id: breadcrumbDrop
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            dir: step.modelData.path
+                        }
 
                         MouseArea {
                             id: link
@@ -118,6 +126,16 @@ Rectangle {
         onAccepted: {
             if (root.folder.go(text))
                 root.finish();
+        }
+        Keys.onTabPressed: event => {
+            if (cursorPosition === text.length) {
+                const completion = root.folder.completePath(text);
+                if (completion !== text) {
+                    text = completion;
+                    cursorPosition = text.length;
+                    event.accepted = true;
+                }
+            }
         }
         Keys.onEscapePressed: root.finish()
         onActiveFocusChanged: {

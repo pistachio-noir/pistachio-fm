@@ -14,6 +14,7 @@ Item {
 
     signal sortRequested(point at) // `at` in this item's coordinates, the chip's top-left
     signal emptyTrashRequested
+    signal aboutRequested
 
     function flash(text: string) {
         problem = true;
@@ -36,9 +37,9 @@ Item {
     }
 
     Text {
-        x: 24
+        x: version.x + version.width + 16
         anchors.verticalCenter: parent.verticalCenter
-        width: (stop.visible ? stop.x : root.trash ? emptyTrash.x : chip.x) - 24 - 16
+        width: Math.max(0, (stop.visible ? stop.x : root.trash ? emptyTrash.x : chip.x) - x - 16)
         elide: Text.ElideRight
         text: root.message || FileOps.progress || root.folder.summary
         textFormat: Text.PlainText
@@ -55,24 +56,44 @@ Item {
         onTriggered: root.message = ""
     }
 
-    Text {
+    Item {
         id: version
-        anchors.right: parent.right
-        anchors.rightMargin: 24
+        objectName: "versionButton"
+        x: 24
         anchors.verticalCenter: parent.verticalCenter
-        text: "v" + Qt.application.version
-        textFormat: Text.PlainText
-        color: Theme.subtext
-        font.family: Theme.fontUi
-        font.pixelSize: 12
-        font.weight: Font.Medium
-        font.features: { "tnum": 1 }
+        width: versionText.implicitWidth
+        height: 44
+        activeFocusOnTab: true
+        Accessible.role: Accessible.Button
+        Accessible.name: "About Pistachio FM"
+        Keys.onReturnPressed: root.aboutRequested()
+        Keys.onEnterPressed: root.aboutRequested()
+        Keys.onSpacePressed: root.aboutRequested()
+        Text {
+            id: versionText
+            anchors.verticalCenter: parent.verticalCenter
+            text: "v" + Qt.application.version
+            textFormat: Text.PlainText
+            color: versionMouse.containsMouse || version.activeFocus ? Theme.textBright : Theme.subtext
+            font.family: Theme.fontUi
+            font.pixelSize: 12
+            font.weight: Font.Medium
+            font.features: { "tnum": 1 }
+            Behavior on color { ColorAnimation { duration: Theme.hoverDuration; easing.type: Theme.easing } }
+        }
+        MouseArea {
+            id: versionMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.aboutRequested()
+        }
     }
 
     Chip {
         id: chip
-        anchors.right: version.left
-        anchors.rightMargin: 16
+        anchors.right: parent.right
+        anchors.rightMargin: 24
         anchors.verticalCenter: parent.verticalCenter
         text: "Sorted by " + ["name", "date", "size", "type"][root.folder.sortKey]
         onClicked: root.sortRequested(Qt.point(chip.x, chip.y))

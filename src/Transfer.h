@@ -44,7 +44,7 @@ Result run(const QList<Item> &items, bool move, const std::atomic<bool> &stop,
            const std::function<void(const Progress &)> &report);
 
 // adds the files under `path` (links count as files, never followed) to totalFiles and totalBytes
-void survey(const QString &path, Progress &progress);
+void survey(const QString &path, Progress &progress, const std::atomic<bool> *stop = nullptr);
 
 // "Copying 3 of 14 · 340 MB of 1.2 GB", "Moving “disk.iso” · 340 MB of 1.2 GB"
 QString describe(const Progress &progress);

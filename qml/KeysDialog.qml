@@ -43,6 +43,7 @@ Controls.Popup {
             [["Ctrl", "2"], "List"],
             [["Ctrl", "T"], "New tab"],
             [["Ctrl", "W"], "Close the tab"],
+            [["Ctrl", "Shift", "T"], "Reopen closed tab"],
             [["Ctrl", "Tab"], "Next tab"],
             [["F3"], "Split view"],
             [["Ctrl", "Q"], "Quit"],

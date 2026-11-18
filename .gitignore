@@ -1,7 +1,10 @@
-# CMake build output (cmake -S . -B build), and the build folders IDEs make
+# Meson build output and build folders IDEs make
 /build/
 /build-*/
 /cmake-build-*/
+
+# agent handoff
+*-HANDOFF.md
 
 # Qt Creator's per-user project settings
 CMakeLists.txt.user*

@@ -19,6 +19,11 @@ Rectangle {
     Accessible.role: Accessible.Button
     Accessible.name: label
 
+    scale: mouse.pressed ? 0.97 : 1
+    Behavior on scale {
+        NumberAnimation { duration: Theme.hoverDuration; easing.type: Theme.easing }
+    }
+
     Behavior on color {
         ColorAnimation {
             duration: Theme.hoverDuration

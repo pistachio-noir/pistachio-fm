@@ -32,6 +32,13 @@ Settings follow-up: a toolbar button/Ctrl+comma opens common MIME types plus ful
 The panel reads effective defaults with xdg-mime, offers installed app choices, and writes only on Apply,
 then verifies the effective result. It does not launch files or change defaults merely by browsing.
 
+## Implementation update — 18 November 2026
+
+The sort menu now offers reverse order while keeping folders first. Transfer cancellation is also
+checked while surveying a folder tree before a copy; a single directory listing may still take time.
+The tab strip scrolls on overflow and keeps the active tab in view. Toolbar buttons, status chips and
+grid tiles also animate briefly on press. Breadcrumbs accept file drops. Properties shows the current folder when nothing is selected and counts multiple selected items together. Ctrl+Shift+T reopens closed tabs and Tab completes folder paths in the location field. The other features in this audit remain open.
+
 ## Already implemented
 
 Do not treat these as missing: grid/list views; tabs; per-tab split panes; navigation history; keyboard selection and box selection; live folder updates; hidden files; copy/cut/paste with Nautilus/Dolphin clipboard formats; cross-application file dragging; background transfers with progress and Stop; ten-step undo; trash, restore and permanent deletion; per-drive trash; GTK-shared bookmarks; image thumbnails; ZIP creation and archive extraction; Open With and MIME defaults; external terminal launch; removable-drive mounting/unmounting.
@@ -43,11 +50,11 @@ Do not treat these as missing: grid/list views; tabs; per-tab split panes; navig
 | Recursive search | Implemented: toggle the search icon; local filtering remains the default. New matches outside watched result parents need F5; unreadable subfolders are skipped. | Basic filename traversal is covered; indexed and advanced search remain out of scope. |
 | Advanced search | No content search, date/type filters, index integration, or saved searches. | Nautilus offers date/type/content search. Dolphin additionally documents saved searches and metadata filters. |
 | Transfer conflicts | Automatically keeps both with a numbered name. No Replace, Skip, Merge, or apply-to-all choice. | Nautilus has a conflict dialog. Updating an existing folder tree in Pistachio produces another folder instead of merging it. |
-| Batch rename | Rename requires exactly one selected item. | Both competitors support batch rename; Nautilus offers templates, numbering, find/replace, and previews. |
+| Batch rename | Multiple selections support find/replace with a preview and one undo step. Templates and numbering are not yet offered. | Thunar and Nautilus provide additional batch-renaming modes. |
 | Remote locations | No native SMB, SSH/SFTP, FTP, or WebDAV connection or authentication workflow. Remote GTK bookmarks are retained but hidden. | Nautilus and KDE support network locations. Externally mounted storage remains usable through a local path. |
 | Permission editing | Permissions and owner are displayed as text. No permission, group, or executable-bit controls. | Nautilus offers permission editing, including applying permissions to enclosed files. |
 | Rich previews | Space opens text, image and paged PDF previews. Image/PDF zoom and panning are implemented; no PDF/video thumbnails, media playback or office-document rendering. | Nautilus has a document/media preview workflow; Dolphin has previews and an information panel, subject to installed components. |
-| View preferences | No reverse sort, zoom, grouping, configurable columns, or stored per-folder display preferences. Grid/list mode is shared across panes. | Dolphin supports extensive view controls and remembers folder display settings. |
+| View preferences | No view zoom, grouping, configurable columns, or stored per-folder display preferences. Grid/list mode is shared across panes. | Dolphin supports extensive view controls and remembers folder display settings. |
 | Tree navigation | No folder-tree sidebar or expandable directory rows. | Dolphin provides a Folders panel and expandable folders in Details view. |
 | Link creation | Can preserve existing symbolic links and show their targets, but cannot create a link through the UI. | Dolphin supports creating symbolic links through drag and drop. |
 | Embedded terminal | Only launches an external terminal. | Dolphin also provides an integrated terminal panel. |
@@ -65,13 +72,10 @@ Do not treat these as missing: grid/list views; tabs; per-tab split panes; navig
 
 ### Selection and properties
 
-- No Properties for multiple selected items, including combined recursive size/count.
-- No Properties for the current folder when nothing is selected.
 - No invert-selection or pattern-selection action.
 
 ### Drag and drop
 
-- No drops onto breadcrumb segments.
 - No opening a folder by hovering over it during a file drag.
 - No scrolling while dragging files or while extending a selection rectangle.
 - No file thumbnail under the drag pointer.
@@ -79,10 +83,8 @@ Do not treat these as missing: grid/list views; tabs; per-tab split panes; navig
 
 ### Tabs and windows
 
-- No tab reordering, detaching into another window, or reopening a closed tab.
-- No overflow scrolling in the tab strip; its plain `Row` can exceed the available width.
+- No tab reordering or detaching into another window.
 - No in-app New Window action or shortcut. Launching another process can still open another window.
-- No location-field path completion.
 - No session restoration. This is explicitly a design decision, not an accidentally unfinished feature.
 
 ### Archives and new files
@@ -106,7 +108,7 @@ Do not treat these as missing: grid/list views; tabs; per-tab split panes; navig
 - No per-job operation list, individual cancellation, pause/resume, speed, ETA, or persistent error history.
 - Stop applies to transfers. Archive subprocesses do not participate in that cancellation mechanism.
 - Closing Properties does not cancel its background recursive size calculation.
-- The initial recursive transfer survey has no stop check; cancellation can be delayed while surveying a large tree.
+- The initial recursive transfer survey checks Stop between entries; a directory listing already in progress cannot be interrupted.
 
 ### Desktop integration and metadata
 
@@ -137,8 +139,8 @@ This is the recommended order for the next session's implementation work, subjec
 1. **Done:** recursive filename search, retaining the current fast folder filter.
 2. Transfer conflict choices: Replace / Skip / Keep Both, then folder merging.
 3. Multi-item/current-folder Properties and permission editing.
-4. Batch rename with a preview.
-5. Reverse sorting, zoom, path completion, and remembered view preferences.
+4. Add batch rename numbering and templates if needed.
+5. View zoom and remembered view preferences.
 6. Extend the implemented text/image/PDF quick preview with media support; PDF/video thumbnails.
 7. Drag autoscroll, breadcrumb drops, and tab overflow/reordering.
 8. Native network and phone access if needed for the owner's workflows.

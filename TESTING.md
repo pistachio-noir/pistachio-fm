@@ -1,8 +1,8 @@
 # What to test by hand
 
-The automated checks cover the backend (`build/tst_backend`) and a mouse-and-keyboard run on a made-up
-home folder (`build/pfm-shots OUTDIR`). This list is what they can't see: your real desktop, real
-files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm ~/Downloads`). Compare it with
+The automated checks cover the backend (`build-meson/tst_backend`) and a mouse-and-keyboard run on a made-up
+home folder (`build-meson/pfm-shots OUTDIR`). This list is what they can't see: your real desktop, real
+files, real apps. Run the app with `build-meson/pistachio-fm` (or `build-meson/pistachio-fm ~/Downloads`). Compare it with
 `design/pistachio-file-manager/html/*.html`.
 
 ## Looks
@@ -140,10 +140,10 @@ files, real apps. Run the app with `build/pistachio-fm` (or `build/pistachio-fm 
 
 ## Fitting in with the shell (optional, reversible)
 
-- [ ] `cmake --install build --prefix ~/.local`, then `xdg-mime default pistachio-fm.desktop inode/directory` to make it the
+- [ ] `meson install -C build-meson`, then `xdg-mime default pistachio-fm.desktop inode/directory` to make it the
   folder app (the shell's "Show in file manager" and the launcher's folders use xdg-open). Back with
   `xdg-mime default org.gnome.Nautilus.desktop inode/directory`
-- [ ] "Pistachio FM" in the shell's launcher opens the app (after `cmake --install`)
+- [ ] "Pistachio FM" in the shell's launcher opens the app (after `meson install -C build-meson`)
 - [ ] Hyprland window rules match class `pistachio-fm`
 
 ## Not built yet

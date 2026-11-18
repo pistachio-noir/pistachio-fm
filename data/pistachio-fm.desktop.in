@@ -1,11 +1,11 @@
-# Pistachio FM's desktop entry. `cmake --install build --prefix ~/.local` puts it in
+# Pistachio FM's desktop entry. `meson install -C build-meson` puts it in
 # ~/.local/share/applications (and the app in ~/.local/bin), where launchers find it.
 #
 # The installed copy runs the app by its full path (~/.local/bin/pistachio-fm): launchers start apps
 # with the session's PATH, which needn't hold ~/.local/bin (the Pistachio shell's doesn't).
 #
 # To try it before installing, copy it there and point Exec and TryExec at the build:
-#   Exec=/home/sx/Desktop/pistachio-fm/build/pistachio-fm %U
+#   Exec=/path/to/pistachio-fm/build-meson/pistachio-fm %U
 #
 # To make it the app that opens folders (xdg-open, the shell's "Show in file manager"):
 #   xdg-mime default pistachio-fm.desktop inode/directory
@@ -19,9 +19,9 @@ GenericName=File Manager
 Comment=Browse your files in Pistachio Noir
 Keywords=folder;files;explorer;browser;manager;pistachio;
 # %U: xdg-open hands over folders (and files: their folder opens with them selected) as file:// URLs
-Exec=pistachio-fm %U
+Exec=@EXECUTABLE@ %U
 # hides the entry while the app isn't there
-TryExec=pistachio-fm
+TryExec=@EXECUTABLE@
 # installed to hicolor/scalable/apps (the shell only finds hicolor icons, suite gotcha G-19)
 Icon=pistachio-fm
 Terminal=false

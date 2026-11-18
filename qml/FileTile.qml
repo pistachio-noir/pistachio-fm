@@ -27,6 +27,11 @@ Rectangle {
     Accessible.name: name
     Accessible.selected: selected
 
+    scale: mouse.pressed ? 0.97 : 1
+    Behavior on scale {
+        NumberAnimation { duration: Theme.hoverDuration; easing.type: Theme.easing }
+    }
+
     Behavior on color {
         ColorAnimation {
             duration: Theme.hoverDuration

@@ -11,6 +11,7 @@ Controls.ApplicationWindow {
     required property string startPath
     property string viewMode: "grid"
     property int currentTab
+    property var closedTabs: []
     property string dropSide // a tab being dragged over a side of the files
     property int draggedTab: -1
     property point dragAt // window coordinates
@@ -59,15 +60,31 @@ Controls.ApplicationWindow {
     }
 
     // the window goes with the last tab
-    function closeTab(index: int) {
+    function closeTab(index: int, keepHistory = true) {
         if (tabList.count <= 1) {
             close();
             return;
+        }
+        if (keepHistory) {
+            const tab = pages.itemAt(index) as TabPage;
+            if (tab)
+                closedTabs = [...closedTabs, tab.snapshot()].slice(-10);
         }
         tabList.remove(index);
         if (currentTab > index || currentTab === tabList.count)
             currentTab -= 1;
         Qt.callLater(focusFiles);
+    }
+
+    function reopenTab() {
+        if (closedTabs.length === 0)
+            return;
+        const state = closedTabs[closedTabs.length - 1];
+        closedTabs = closedTabs.slice(0, -1);
+        newTab(state.left);
+        const tab = pages.itemAt(currentTab) as TabPage;
+        if (tab)
+            tab.restore(state);
     }
 
     // where a tab dragged to `at` (window coordinates) would land: the outer thirds of the files, never
@@ -88,7 +105,7 @@ Controls.ApplicationWindow {
         draggedTab = -1;
         if (side) {
             page.openBeside((pages.itemAt(index) as TabPage).activePane.folder.path, side);
-            closeTab(index);
+            closeTab(index, false);
         }
     }
 
@@ -99,6 +116,8 @@ Controls.ApplicationWindow {
                               tab.toggleSplit();
                           } },
                         { text: "Close tab", icon: Icons.x, run: () => closeTab(index) }];
+        if (closedTabs.length > 0)
+            menu.entries = [...menu.entries, { text: "Reopen closed tab", icon: Icons.restore, run: reopenTab }];
         menu.openAt(at.x, at.y);
     }
 
@@ -179,8 +198,12 @@ Controls.ApplicationWindow {
 
     function askRename() {
         const paths = folderModel.selectedPaths;
-        if (paths.length !== 1 || inTrash)
+        if (paths.length === 0 || inTrash)
             return;
+        if (paths.length > 1) {
+            batchRename.show(paths);
+            return;
+        }
         const path = paths[0];
         const dir = path.slice(0, path.lastIndexOf("/")) || "/";
         names.ask({
@@ -234,8 +257,10 @@ Controls.ApplicationWindow {
 
     function showProperties() {
         const paths = folderModel.selectedPaths;
-        if (paths.length === 1)
-            properties.show(paths[0]);
+        if (paths.length > 1)
+            properties.showMany(paths);
+        else
+            properties.show(paths.length === 1 ? paths[0] : folderModel.path);
     }
 
     function showPreview() {
@@ -267,7 +292,7 @@ Controls.ApplicationWindow {
     function itemEntries() {
         const paths = folderModel.selectedPaths;
         // one item has properties to show
-        const info = paths.length === 1 ? [{ text: "Properties", icon: Icons.info, run: showProperties }] : [];
+        const info = [{ text: "Properties", icon: Icons.info, run: showProperties }];
         const copyPath = { text: "Copy path", icon: Icons.link, run: () => FileOps.copyPaths(paths) };
         const remove = { text: "Delete forever", icon: Icons.trash2, danger: true, run: () => askDelete(paths) };
         if (atTrash)
@@ -282,8 +307,7 @@ Controls.ApplicationWindow {
         }
         if (paths.length === 1 && !folderModel.get(folderModel.rowOf(paths[0])).isDir)
             entries.push({ text: "Open with…", icon: Icons.externalLink, run: () => openWith.show(paths[0]) });
-        if (paths.length === 1)
-            entries.push({ text: "Rename", icon: Icons.pencil, run: askRename });
+        entries.push({ text: "Rename", icon: Icons.pencil, run: askRename });
         entries.push({ text: "Cut", icon: Icons.scissors, run: () => FileOps.cut(paths) },
                      { text: "Copy", icon: Icons.copy, run: () => FileOps.copy(paths) },
                      copyPath,
@@ -299,15 +323,17 @@ Controls.ApplicationWindow {
     function backgroundEntries() {
         const hidden = { text: "Show hidden files", icon: Icons.eye, checked: folderModel.showHidden,
                          run: () => folderModel.showHidden = !folderModel.showHidden };
+        const propertiesEntry = { text: "Properties", icon: Icons.info, run: showProperties };
         if (atTrash)
-            return [hidden, { separator: true }, { text: "Empty trash", icon: Icons.trash2, danger: true, run: askEmptyTrash }];
+            return [hidden, propertiesEntry, { separator: true }, { text: "Empty trash", icon: Icons.trash2, danger: true, run: askEmptyTrash }];
         if (inTrash)
-            return [hidden];
+            return [hidden, propertiesEntry];
         const entries = [{ text: "New folder", icon: Icons.folderPlus, run: askNewFolder },
                          { text: "New file", icon: Icons.filePlus, run: askNewFile }];
         if (FileOps.canPaste)
             entries.push({ text: "Paste", icon: Icons.clipboard, run: pasteHere });
-        entries.push({ text: "Open in terminal", icon: Icons.terminal, run: () => Apps.openTerminal(folderModel.path) }, hidden);
+        entries.push({ text: "Open in terminal", icon: Icons.terminal, run: () => Apps.openTerminal(folderModel.path) }, hidden,
+                     { separator: true }, propertiesEntry);
         return entries;
     }
 
@@ -326,8 +352,11 @@ Controls.ApplicationWindow {
             checked: folderModel.sortKey === key,
             run: () => folderModel.sortKey = key
         }));
+        menu.entries = [...menu.entries, { separator: true },
+                        { text: "Reverse order", icon: [], checked: folderModel.reverseSort,
+                          run: () => folderModel.reverseSort = !folderModel.reverseSort }];
         const at = status.mapToItem(null, chipTopLeft);
-        menu.openAt(at.x, at.y - menu.implicitHeight - 8);
+        menu.openAt(at.x, at.y, true);
     }
 
     // the boards' 960 x 516 window, a little taller so Devices fits without scrolling
@@ -544,6 +573,7 @@ Controls.ApplicationWindow {
             trash: window.atTrash && folderModel.totalCount > 0
             onSortRequested: at => window.openSortMenu(at)
             onEmptyTrashRequested: window.askEmptyTrash()
+            onAboutRequested: about.open()
         }
     }
 
@@ -615,6 +645,18 @@ Controls.ApplicationWindow {
         onAboutToHide: window.focusFiles()
     }
 
+    AboutDialog {
+        id: about
+        onAboutToHide: window.focusFiles()
+    }
+
+    BatchRenameDialog {
+        id: batchRename
+        objectName: "batchRename"
+        onAboutToHide: window.focusFiles()
+        onRenamed: paths => folderModel.selectPaths(paths)
+    }
+
     PropertiesDialog {
         id: properties
         objectName: "properties"
@@ -679,6 +721,7 @@ Controls.ApplicationWindow {
     Shortcut { sequences: ["F5", "Ctrl+R"]; onActivated: folderModel.reload() }
     Shortcut { sequence: "Ctrl+T"; onActivated: window.newTab(window.folderModel.path) }
     Shortcut { sequence: "Ctrl+W"; onActivated: window.closeTab(window.currentTab) }
+    Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.reopenTab() }
     Shortcut { sequences: ["Ctrl+Tab", "Ctrl+PgDown"]; onActivated: window.nextTab(1) }
     Shortcut { sequences: ["Ctrl+Shift+Tab", "Ctrl+Backtab", "Ctrl+Shift+Backtab", "Ctrl+PgUp"]; onActivated: window.nextTab(-1) }
     Shortcut { sequence: "F3"; onActivated: if (window.page) window.page.toggleSplit() }

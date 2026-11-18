@@ -12,6 +12,7 @@ Controls.Popup {
     property string path
     property var info: ({})
     property string size
+    property int measureToken
     property string opensWith // a file's default app, "None"; "" for a folder
 
     signal chooseApp(string path) // Change / Choose next to Opens with
@@ -30,12 +31,23 @@ Controls.Popup {
     ].filter(row => !!row[1])
 
     function show(path: string) {
+        ++measureToken;
         root.path = path;
         info = FileOps.properties(path);
         size = info.measure ? "Counting…" : info.size;
         opensWith = info.kind === "folder" ? "" : Apps.defaultName(path) || "None";
         if (info.measure)
             FileOps.measure(path);
+        open();
+    }
+
+    function showMany(paths) {
+        ++measureToken;
+        path = "";
+        info = { name: paths.length + " selected", kind: "file", type: "Multiple items" };
+        size = "Counting…";
+        opensWith = "";
+        FileOps.measureSelection(paths, measureToken);
         open();
     }
 
@@ -51,6 +63,11 @@ Controls.Popup {
 
     Connections {
         target: FileOps
+
+        function onSelectionMeasured(request, size) {
+            if (request === root.measureToken && root.path === "")
+                root.size = size;
+        }
 
         function onMeasured(path, size) {
             if (path === root.path)

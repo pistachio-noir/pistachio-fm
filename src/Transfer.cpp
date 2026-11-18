@@ -230,15 +230,20 @@ private:
 
 } // namespace
 
-void survey(const QString &path, Progress &progress)
+void survey(const QString &path, Progress &progress, const std::atomic<bool> *stop)
 {
+    if (stop && *stop)
+        return;
     struct stat st;
     if (::lstat(QFile::encodeName(path).constData(), &st) != 0)
         return;
     if (S_ISDIR(st.st_mode)) {
         const QStringList names = QDir(path).entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-        for (const QString &name : names)
-            survey(path + u'/' + name, progress);
+        for (const QString &name : names) {
+            if (stop && *stop)
+                break;
+            survey(path + u'/' + name, progress, stop);
+        }
         return;
     }
     ++progress.totalFiles;
@@ -318,8 +323,11 @@ Result run(const QList<Item> &items, bool move, const std::atomic<bool> &stop,
     copier.progress.moving = move;
     if (toCopy.size() == 1)
         copier.progress.name = nameOf(toCopy.first().source);
-    for (const Item &item : std::as_const(toCopy))
-        survey(item.source, copier.progress);
+    for (const Item &item : std::as_const(toCopy)) {
+        if (stop)
+            break;
+        survey(item.source, copier.progress, &stop);
+    }
 
     for (const Item &item : std::as_const(toCopy)) {
         if (stop)

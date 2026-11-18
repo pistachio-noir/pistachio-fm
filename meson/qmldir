@@ -1,0 +1,35 @@
+module Pistachio.Files
+Main 1.0 Main.qml
+singleton Theme 1.0 Theme.qml
+singleton Icons 1.0 Icons.qml
+Icon 1.0 Icon.qml
+Shadow 1.0 Shadow.qml
+IconButton 1.0 IconButton.qml
+PathBar 1.0 PathBar.qml
+SearchField 1.0 SearchField.qml
+Sidebar 1.0 Sidebar.qml
+PlaceButton 1.0 PlaceButton.qml
+SectionLabel 1.0 SectionLabel.qml
+FileView 1.0 FileView.qml
+Pane 1.0 Pane.qml
+TabPage 1.0 TabPage.qml
+TabBar 1.0 TabBar.qml
+FileTile 1.0 FileTile.qml
+FileRow 1.0 FileRow.qml
+KindBadge 1.0 KindBadge.qml
+ThinScrollBar 1.0 ThinScrollBar.qml
+StatusBar 1.0 StatusBar.qml
+Chip 1.0 Chip.qml
+FileMenu 1.0 FileMenu.qml
+FolderDrop 1.0 FolderDrop.qml
+MenuEntry 1.0 MenuEntry.qml
+ConfirmDialog 1.0 ConfirmDialog.qml
+NameDialog 1.0 NameDialog.qml
+BatchRenameDialog 1.0 BatchRenameDialog.qml
+AboutDialog 1.0 AboutDialog.qml
+PropertiesDialog 1.0 PropertiesDialog.qml
+PreviewDialog 1.0 PreviewDialog.qml
+OpenWithDialog 1.0 OpenWithDialog.qml
+KeysDialog 1.0 KeysDialog.qml
+SettingsDialog 1.0 SettingsDialog.qml
+DialogButton 1.0 DialogButton.qml
