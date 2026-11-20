@@ -41,6 +41,7 @@ FileEntry fileEntry(const QFileInfo &info)
     entry.hidden = entry.name.startsWith(u'.');
     entry.modified = info.lastModified();
     if (entry.isDir) {
+        entry.size = FileEntry::Counting;
         entry.kind = QStringLiteral("folder");
     } else {
         entry.size = info.size();
@@ -83,6 +84,26 @@ int countEntries(const QString &path, bool showHidden)
     if (showHidden)
         filters |= QDir::Hidden;
     return int(QDir(path).entryList(filters, QDir::NoSort).size());
+}
+
+qint64 folderSize(const QString &path, const std::shared_ptr<std::atomic<quint64>> &generation, quint64 expected)
+{
+    const QFileInfo folder(path);
+    if (folder.isSymLink() || !folder.isReadable() || !folder.isExecutable())
+        return FileEntry::Unreadable;
+    qint64 bytes = 0;
+    const auto flags = QDirListing::IteratorFlag::Recursive | QDirListing::IteratorFlag::IncludeHidden;
+    for (const auto &item : QDirListing(path, flags)) {
+        if (*generation != expected)
+            return FileEntry::Counting;
+        if (item.isSymLink())
+            continue;
+        if (item.isDir() && (!item.isReadable() || !item.isExecutable()))
+            return FileEntry::Unreadable;
+        if (item.isFile())
+            bytes += item.size();
+    }
+    return bytes;
 }
 
 bool sameData(const FileEntry &a, const FileEntry &b)
@@ -132,7 +153,10 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
             return {};
         if (entry.itemCount == FileEntry::Unreadable)
             return QStringLiteral("Folder");
-        return Format::items(entry.itemCount);
+        const QString count = Format::items(entry.itemCount);
+        if (entry.size == FileEntry::Counting)
+            return count;
+        return count + QStringLiteral(" · ") + (entry.size == FileEntry::Unreadable ? QStringLiteral("—") : Format::size(entry.size));
     };
     const auto modified = [&entry] {
         return entry.modified.isValid() ? Format::date(entry.modified) : QStringLiteral("—");
@@ -476,7 +500,6 @@ void FolderModel::startListing()
                         return;
                     if (item.fileName().contains(query, Qt::CaseInsensitive)) {
                         FileEntry entry = fileEntry(item.fileInfo());
-                        entry.itemCount = FileEntry::Unreadable; // no item counts in search results
                         entries.append(entry);
                     }
                 }
@@ -485,9 +508,6 @@ void FolderModel::startListing()
         if (*latest != generation)
             return;
         post([entries, error](FolderModel *model) { model->listed(entries, error); });
-
-        if (!query.isEmpty())
-            return;
 
         // then how many items each folder holds, in batches so a slow disk shows some early
         QHash<QString, int> counts;
@@ -507,6 +527,16 @@ void FolderModel::startListing()
         }
         if (!counts.isEmpty())
             post([counts](FolderModel *model) { model->counted(counts); });
+
+        // Size scans are separate so every count appears before a large subtree is traversed.
+        for (const FileEntry &entry : entries) {
+            if (!entry.isDir || (entry.hidden && !showHidden))
+                continue;
+            if (*latest != generation)
+                return;
+            const qint64 size = folderSize(entry.path, latest, generation);
+            post([path = entry.path, size](FolderModel *model) { model->sized(path, size); });
+        }
     });
 }
 
@@ -515,8 +545,10 @@ void FolderModel::listed(QList<FileEntry> entries, const QString &error)
     // a reload keeps the counts already known, so folders don't blink empty while recounted
     for (FileEntry &entry : entries) {
         const qsizetype old = m_allIndex.value(entry.path, -1);
-        if (entry.isDir && old >= 0)
+        if (entry.isDir && old >= 0 && m_all.at(old).isDir) {
             entry.itemCount = m_all.at(old).itemCount;
+            entry.size = m_all.at(old).size;
+        }
     }
     m_all = std::move(entries);
     m_allIndex.clear();
@@ -566,6 +598,18 @@ void FolderModel::counted(const QHash<QString, int> &counts)
             m_rows[row].itemCount = it.value();
             emit dataChanged(index(row), index(row), { SizeTextRole, DetailRole });
         }
+    }
+}
+
+void FolderModel::sized(const QString &path, qint64 size)
+{
+    const qsizetype at = m_allIndex.value(path, -1);
+    if (at >= 0)
+        m_all[at].size = size;
+    const int row = m_rowOf.value(path, -1);
+    if (row >= 0 && m_rows.at(row).size != size) {
+        m_rows[row].size = size;
+        emit dataChanged(index(row), index(row), { SizeRole, SizeTextRole, DetailRole });
     }
 }
 

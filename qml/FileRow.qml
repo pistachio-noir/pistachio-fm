@@ -1,7 +1,6 @@
 import QtQuick
 
-// A list row: badge, then name, modified and size in the header's columns (110 and 80 px at the
-// right). Selected, it's the pistachio chip with bg-coloured text.
+// A list row: badge, name, modified date and size. Selected, it's the pistachio chip with bg-coloured text.
 Rectangle {
     id: root
 
@@ -11,6 +10,7 @@ Rectangle {
     required property string kind
     required property string modifiedText
     required property string sizeText
+    required property real sizeColumnWidth
     required property bool selected
     required property bool isDir
     required property bool picture
@@ -64,7 +64,7 @@ Rectangle {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 110 - 80
+            width: Math.max(0, parent.width - 110 - root.sizeColumnWidth - 8)
             text: root.name
             textFormat: Text.PlainText
             elide: Text.ElideRight
@@ -75,7 +75,7 @@ Rectangle {
         }
 
         Text {
-            x: parent.width - 110 - 80
+            x: Math.max(0, parent.width - 110 - root.sizeColumnWidth)
             anchors.verticalCenter: parent.verticalCenter
             width: 110
             text: root.modifiedText
@@ -89,11 +89,11 @@ Rectangle {
         }
 
         Text {
-            x: parent.width - 80
+            x: parent.width - root.sizeColumnWidth
             anchors.verticalCenter: parent.verticalCenter
-            width: 80
+            width: root.sizeColumnWidth
             horizontalAlignment: Text.AlignRight
-            text: root.sizeText
+            text: root.isDir && root.sizeColumnWidth < 130 ? root.sizeText.replace(" · ", "\n") : root.sizeText
             textFormat: Text.PlainText
             elide: Text.ElideRight
             color: root.selected ? Theme.bg : Theme.subtext

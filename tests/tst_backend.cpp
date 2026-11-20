@@ -463,8 +463,8 @@ private slots:
         QCOMPARE(names(model), (QStringList { "Projects", "notes", "file10.txt", "file2.txt", "Apple.md" }));
         QVERIFY(model.setProperty("reverseSort", false));
         // the folders' item counts come a moment later
-        QTRY_COMPARE(model.data(model.index(1), FolderModel::DetailRole).toString(), QStringLiteral("2 items"));
-        QTRY_COMPARE(model.data(model.index(0), FolderModel::SizeTextRole).toString(), QStringLiteral("0 items"));
+        QTRY_COMPARE(model.data(model.index(1), FolderModel::DetailRole).toString(), QStringLiteral("2 items · 0 B"));
+        QTRY_COMPARE(model.data(model.index(0), FolderModel::SizeTextRole).toString(), QStringLiteral("0 items · 0 B"));
     }
 
     void pathCompletion()
@@ -488,6 +488,42 @@ private slots:
         QVERIFY(info.value(QStringLiteral("compiler")).toString().contains(QStringLiteral("Clang")));
         QCOMPARE(info.value(QStringLiteral("qt")).toString(), QString::fromLatin1(qVersion()));
         QVERIFY(!info.value(QStringLiteral("system")).toString().isEmpty());
+    }
+
+    void folderSizes()
+    {
+        const QString path = dir(QStringLiteral("folder-sizes"));
+        QDir().mkpath(path + QStringLiteral("/Projects/Nested"));
+        touch(path + QStringLiteral("/Projects/a.txt"), 1200);
+        touch(path + QStringLiteral("/Projects/.hidden"), 300);
+        touch(path + QStringLiteral("/Projects/Nested/b.txt"), 500);
+        QVERIFY(QFile::link(path + QStringLiteral("/Projects"), path + QStringLiteral("/Projects/Nested/loop")));
+        FolderModel model;
+        QVERIFY(model.go(path));
+        QTRY_VERIFY(!model.loading());
+        QTRY_COMPARE(model.data(model.index(0), FolderModel::DetailRole).toString(), QStringLiteral("2 items · 2 KB"));
+        QCOMPARE(model.data(model.index(0), FolderModel::SizeTextRole).toString(), QStringLiteral("2 items · 2 KB"));
+        QFile nested(path + QStringLiteral("/Projects/Nested/b.txt"));
+        QVERIFY(nested.open(QIODevice::ReadWrite));
+        QVERIFY(nested.resize(1500));
+        nested.close();
+        model.reload();
+        QTRY_COMPARE(model.data(model.index(0), FolderModel::DetailRole).toString(), QStringLiteral("2 items · 3 KB"));
+        model.setShowHidden(true);
+        QTRY_COMPARE(model.data(model.index(0), FolderModel::DetailRole).toString(), QStringLiteral("3 items · 3 KB"));
+        model.setRecursive(true);
+        model.setFilter(QStringLiteral("Projects"));
+        QTRY_VERIFY(model.rowOf(path + QStringLiteral("/Projects")) >= 0);
+        QTRY_COMPARE(model.data(model.index(model.rowOf(path + QStringLiteral("/Projects"))), FolderModel::DetailRole).toString(),
+                     QStringLiteral("3 items · 3 KB"));
+        model.setFilter(QString());
+        model.setRecursive(false);
+        const QString link = path + QStringLiteral("/linked-folder");
+        QVERIFY(QFile::link(path + QStringLiteral("/Projects"), link));
+        model.reload();
+        QTRY_VERIFY(model.rowOf(link) >= 0);
+        QTRY_COMPARE(model.data(model.index(model.rowOf(link)), FolderModel::DetailRole).toString(),
+                     QStringLiteral("3 items · —"));
     }
 
     void missingFolder()

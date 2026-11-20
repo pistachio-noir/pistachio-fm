@@ -18,7 +18,7 @@
 
 ---
 
-Pistachio FM is a local file manager built with QML and C++ on Qt 6. It is designed to sit alongside the Pistachio shell while handling the everyday work: browsing, organising, previewing and moving files.
+Pistachio FM is a local file manager built with QML and C++ on Qt 6. It is designed to sit alongside the Pistachio shell (not replacing any of the "major" file managers) while handling the everyday work: browsing, organising, previewing and moving files.
 
 <p align="center">
   <img src="docs/images/showcase.png" alt="Pistachio FM showing the Documents folder in grid view" width="900">
@@ -148,6 +148,7 @@ Drag files onto folders, sidebar places or breadcrumbs. On a drop, hold <kbd>Ctr
 ## Good to know
 
 - **Conflicts:** copies with an existing name keep both items using a numbered name. Replace, skip and folder-merge choices are not available yet.
+- **Folder sizes:** item counts cover the visible immediate entries; the displayed size sums file contents recursively, including hidden files, without following symbolic links. Inaccessible folders and directory links show `—` for size. Press <kbd>F5</kbd> to refresh changes in nested folders.
 - **Search:** recursive search matches filenames, not file contents; it does not follow directory symlinks. New matches outside watched result folders may need <kbd>F5</kbd>.
 - **Preview:** text is limited to 128 KiB; images use Qt's installed image formats. PDFs are rendered one page at a time with Poppler. Media and office-document previews are not included.
 - **Connections:** network shares can be browsed if mounted as local paths; there is no built-in SMB or SFTP connection dialog.
@@ -181,8 +182,58 @@ The previous CMake configuration is preserved in [`cmake/CMakeLists.txt.backup`]
 
 Pistachio FM is licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only).
 
+### Third-party notices
+
+The icon paths in [`qml/Icons.qml`](qml/Icons.qml) include icons from [Lucide](https://lucide.dev/). Some Lucide icons are derived from [Feather](https://feathericons.com/). The applicable notices are reproduced below; see the [upstream license](https://github.com/lucide-icons/lucide/blob/main/LICENSE) for the list of Feather-derived icons.
+
+<details>
+<summary>Lucide — ISC License</summary>
+
+```text
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+</details>
+
+<details>
+<summary>Feather-derived icons — MIT License</summary>
+
+```text
+The MIT License (MIT) (for the icons listed in Lucide's upstream license)
+
+Copyright (c) 2013-present Cole Bemis
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
 ---
 
 <sub>This project was written with assistance from Claude and Codex.</sub>
-
-Shared colours (18 November 2026, owner’s call): follows `~/.config/pistachio/shared-theme` (`pistachio` or `noir`) live, including atomic replacements. Respects XDG_CONFIG_HOME; missing or invalid files use Pistachio Noir. The shell publishes the selection.

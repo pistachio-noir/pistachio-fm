@@ -75,9 +75,9 @@ public:
         IsDirRole,
         SizeRole,
         ModifiedRole,
-        SizeTextRole, // "2.4 MB", or "14 items" for a folder
+        SizeTextRole, // "2.4 MB", or "14 items · 2.4 MB" for a folder
         ModifiedTextRole, // "Oct 27"
-        DetailRole, // the grid tile's second line: "2.4 MB · Oct 27", or "14 items"
+        DetailRole, // the grid tile's second line: "2.4 MB · Oct 27", or "14 items · 2.4 MB"
         SelectedRole,
         HiddenRole,
         PictureRole,
@@ -155,6 +155,7 @@ private:
     void startListing();
     void listed(QList<FileEntry> entries, const QString &error);
     void counted(const QHash<QString, int> &counts);
+    void sized(const QString &path, qint64 size);
     void rebuild();
     void applyRows(QList<FileEntry> next);
     void reindex();

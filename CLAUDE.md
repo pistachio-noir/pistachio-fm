@@ -40,6 +40,9 @@ Pistachio Noir look. `README.md` has the build, keys and code layout; `TESTING.m
   space; a Stop chip while a paste shows progress; Bookmarks under Places from `~/.config/gtk-3.0/bookmarks`
   (Nautilus' file, re-read on the 4 s poll; only that line changes); a box drag on empty space selects.
 - The version (owner's request 7 Nov, no board): `v1 · <HEAD's short hash>` in subtext at the status bar's left corner; clicking it opens About with build and system information. `meson/version.py` reads the hash on every build into `build-meson/version.h`.
+- Folder tiles and list rows show visible immediate item counts and recursive apparent file sizes
+  (20 Nov request). Sizes include hidden files, never follow symbolic links and are calculated in the
+  background; unreadable subtrees show an unknown size. F5 refreshes nested changes.
 - Properties (18 Nov): Alt+Enter or the menu with multiple selections shows their combined file
   size and count on a worker; selected descendants of a selected directory are counted only once.
 - Batch rename (owner requested 18 Nov): F2 on multiple selected items opens a find-and-replace

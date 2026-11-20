@@ -236,9 +236,9 @@ int main(int argc, char *argv[])
     check(waitFor([&] { return window->isExposed() && !folder->loading() && folder->count() == 11; }),
           "Documents lists its 11 entries");
     check(waitFor([&] {
-              return folder->data(folder->index(0), FolderModel::DetailRole).toString() == QLatin1String("31 items");
+              return folder->data(folder->index(0), FolderModel::DetailRole).toString() == QStringLiteral("31 items · 0 B");
           }),
-          "dotfiles counts 31 items");
+          "dotfiles shows its item count and size");
 
     // 1. the grid, as on browse-grid.html
     save(window, out + QStringLiteral("/grid.png"));
@@ -698,6 +698,21 @@ int main(int argc, char *argv[])
         QTest::mouseMove(window, center);
         QTest::mouseRelease(window, Qt::LeftButton, {}, center);
     }
+    QMetaObject::invokeMethod(window, "setView", Q_ARG(QString, QStringLiteral("list")));
+    check(waitFor([&] {
+        QList<QQuickItem *> items = { window->contentItem() };
+        while (!items.isEmpty()) {
+            QQuickItem *item = items.takeFirst();
+            if (item->property("text").toString() == QStringLiteral("31 items\n0 B")
+                && item->width() >= item->property("implicitWidth").toReal())
+                return true;
+            items.append(item->childItems());
+        }
+        return false;
+    }), "split list shows both the folder count and size without clipping");
+    save(window, out + QStringLiteral("/split-list-size.png"));
+    QMetaObject::invokeMethod(window, "setView", Q_ARG(QString, QStringLiteral("grid")));
+    QTest::qWait(200);
     save(window, out + QStringLiteral("/tabs-split.png"));
     QTest::mouseClick(window, Qt::LeftButton, {}, QPoint(300, 210)); // a tile in the first pane
     check(waitFor([&] { return page()->property("currentPane").toInt() == 0 && current() == notes; }),

@@ -14,6 +14,7 @@ FocusScope {
 
     readonly property var view: mode === "grid" ? grid : list
     readonly property int columns: mode === "grid" ? grid.columns : 1
+    readonly property real sizeColumnWidth: Math.min(150, Math.max(80, width - 258))
 
     // what dragging the selection carries, for this window and other apps; nothing from the trash,
     // which Restore empties
@@ -237,7 +238,7 @@ FocusScope {
         Repeater {
             model: [
                 { text: "Name", key: FolderModel.ByName, x: 6 + 32 + 12, alignRight: false },
-                { text: "Modified", key: FolderModel.ByModified, x: columnHeader.width - 18 - 80 - 110, alignRight: false },
+                { text: "Modified", key: FolderModel.ByModified, x: columnHeader.width - 18 - root.sizeColumnWidth - 110, alignRight: false },
                 { text: "Size", key: FolderModel.BySize, x: columnHeader.width - 18, alignRight: true },
             ]
 
@@ -278,6 +279,7 @@ FocusScope {
         delegate: FileRow {
             id: row
             width: list.width
+            sizeColumnWidth: root.sizeColumnWidth
             onPress: (button, modifiers, at) => root.press(row.index, row.selected, button, modifiers, row.mapToItem(root, at))
             onActivate: root.activated(row.index)
             onClick: modifiers => root.click(row.index, modifiers)

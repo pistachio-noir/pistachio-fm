@@ -1,6 +1,6 @@
 import QtQuick
 
-// A grid tile: kind badge over the name and a detail line ("2.4 MB · Oct 27", "14 items").
+// A grid tile: kind badge over the name and a detail line ("2.4 MB · Oct 27", "14 items · 2.4 MB").
 // Selected, it's the pistachio chip with bg-coloured text.
 Rectangle {
     id: root
