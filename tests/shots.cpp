@@ -139,9 +139,9 @@ QList<QUrl> dragTo(QQuickWindow *window, QPoint from, QPoint to, Qt::KeyboardMod
     if (modifiers & Qt::ControlModifier)
         QTest::keyPress(window, Qt::Key_Control, Qt::ControlModifier);
     const Qt::DropActions actions = Qt::CopyAction | Qt::MoveAction;
-    QDragEnterEvent enter(QPointF(to), actions, &data, Qt::LeftButton, modifiers);
+    QDragEnterEvent enter(to, actions, &data, Qt::LeftButton, modifiers);
     QCoreApplication::sendEvent(window, &enter);
-    QDragMoveEvent move(QPointF(to), actions, &data, Qt::LeftButton, modifiers);
+    QDragMoveEvent move(to, actions, &data, Qt::LeftButton, modifiers);
     QCoreApplication::sendEvent(window, &move);
     QTest::qWait(250);
     if (!snapshot.isEmpty())
@@ -363,9 +363,9 @@ int main(int argc, char *argv[])
         const QPointF at = homeCrumb->mapToScene(QPointF(homeCrumb->width() / 2, homeCrumb->height() / 2));
         QMimeData data;
         data.setUrls({ QUrl::fromLocalFile(breadcrumbSource) });
-        QDragEnterEvent enter(at, Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
+        QDragEnterEvent enter(at.toPoint(), Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
         QCoreApplication::sendEvent(window, &enter);
-        QDragMoveEvent move(at, Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
+        QDragMoveEvent move(at.toPoint(), Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
         QCoreApplication::sendEvent(window, &move);
         QDropEvent drop(at, Qt::CopyAction | Qt::MoveAction, &data, Qt::LeftButton, {});
         QCoreApplication::sendEvent(window, &drop);
